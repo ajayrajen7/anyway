@@ -1,0 +1,14 @@
+# Frontend
+app/node_modules/
+app/dist/
+app/.env.local
+app/.env.*.local
+
+# Backend
+server/*.db
+server/*.db-journal
+/anyway.db
+
+# OS / editor
+.DS_Store
+*.swp
