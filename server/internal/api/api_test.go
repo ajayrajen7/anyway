@@ -136,3 +136,20 @@ func TestGetTodayStatusCodes(t *testing.T) {
 		t.Fatalf("expected 400 for an unparseable date, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestGetProgrammeStatusCodes(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	router := api.NewRouter(conn, "secret")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/programme", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 with no active phase, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

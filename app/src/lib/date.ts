@@ -16,3 +16,12 @@ export function localDateKey(d: Date = new Date()): string {
 export function isAfter6pm(d: Date = new Date()): boolean {
   return d.getHours() >= 18;
 }
+
+// The inverse of localDateKey — parses via local Date components
+// (year/month/day), never `new Date(dateString)`, which the spec treats a
+// bare YYYY-MM-DD as UTC midnight and would shift the date in any timezone
+// ahead of UTC.
+export function parseDateKey(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}

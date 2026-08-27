@@ -18,6 +18,7 @@ import {
 import { isAfter6pm, localDateKey } from '../lib/date';
 import { cacheExerciseLibrary } from '../lib/exerciseCache';
 import { MOBILITY_ITEMS } from '../lib/mobilityItems';
+import { cacheProgramme } from '../lib/programmeCache';
 import { cacheToday } from '../lib/todayCache';
 import type { TodayResponse } from '../lib/types';
 
@@ -61,6 +62,10 @@ export default function Today() {
         cacheExerciseLibrary().catch((err: unknown) => {
           console.error('failed to refresh offline exercise cache', err);
         });
+        // Same best-effort treatment for the Week View's prescribed-coverage cache.
+        cacheProgramme().catch((err: unknown) => {
+          console.error('failed to refresh offline programme cache', err);
+        });
         if (!cancelled) setState({ status: 'ready', data });
       })
       .catch((err: unknown) => {
@@ -91,6 +96,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
         <h1 className="text-lg font-medium">{dayTemplate.name}</h1>
         <p className="mt-2 text-sm text-slate-400">Flat walk only. Not training — just movement.</p>
         {isAfter6pm() && <ProteinRow date={date} />}
+        <WeekLink />
       </div>
     );
   }
@@ -100,6 +106,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
       <div>
         <CardioMobilityDay date={date} weekday={weekday} name={dayTemplate.name} />
         {isAfter6pm() && <ProteinRow date={date} />}
+        <WeekLink />
       </div>
     );
   }
@@ -124,7 +131,19 @@ function TodayCard({ data }: { data: TodayResponse }) {
       </div>
       <MobilityCheckbox date={date} />
       {isAfter6pm() && <ProteinRow date={date} />}
+      <WeekLink />
     </div>
+  );
+}
+
+// "Any time: View this week's muscle-group coverage" (§A2) — the app has no
+// persistent nav/tab bar yet (out of this milestone's scope), so this is
+// the one link that makes /week actually reachable day to day.
+function WeekLink() {
+  return (
+    <Link to="/week" className="mt-4 block text-sm text-slate-400 underline">
+      This week →
+    </Link>
   );
 }
 

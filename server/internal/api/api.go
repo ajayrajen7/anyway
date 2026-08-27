@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/ajayrajen7/anyway/server/internal/phase"
 	"github.com/ajayrajen7/anyway/server/internal/seed"
 	"github.com/ajayrajen7/anyway/server/internal/today"
 )
@@ -33,6 +34,7 @@ func NewRouter(conn *sql.DB, token string) http.Handler {
 		r.Post("/sessions/{id}/add", notImplemented)
 		r.Post("/sessions/{id}/complete", notImplemented)
 		r.Get("/exercises", listExercises(conn))
+		r.Get("/programme", getProgramme(conn)) // M8 amendment to §B5 — see memory.md
 		r.Post("/morning-check", notImplemented)
 		r.Post("/weigh-ins", notImplemented)
 		r.Get("/weigh-ins", notImplemented) // 423 Locked before start+84d — M9 (the Vault)
@@ -99,6 +101,25 @@ func getToday(conn *sql.DB) http.HandlerFunc {
 			case errors.Is(err, today.ErrNoActivePhase), errors.Is(err, today.ErrNoDayTemplate):
 				w.WriteHeader(http.StatusNotFound)
 			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(resp)
+	}
+}
+
+// getProgramme implements GET /api/programme (M8, not in §B5's original
+// list — see memory.md): the active phase's full week structure, cached
+// client-side so the Week View can compute prescribed coverage offline.
+func getProgramme(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := phase.Get(r.Context(), conn)
+		if err != nil {
+			if errors.Is(err, phase.ErrNoActivePhase) {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})

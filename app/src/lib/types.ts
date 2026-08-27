@@ -135,6 +135,48 @@ export const TodayResponse = z.object({
 });
 export type TodayResponse = z.infer<typeof TodayResponse>;
 
+// --- GET /api/programme (docs/architecture.md §B5 amendment, M8) ---
+
+const ProgrammeSlot = z.object({
+  id: z.number(),
+  exercise_id: z.number(),
+  sets: z.number(),
+  reps: z.number(),
+  load_kg: z.number().nullable(),
+});
+export type ProgrammeSlot = z.infer<typeof ProgrammeSlot>;
+
+const ProgrammeDayTemplate = z.object({
+  id: z.number(),
+  weekday: z.number().min(1).max(7),
+  name: z.string(),
+  kind: z.enum(['lifting', 'cardio_mobility', 'rest']),
+  slots: z.array(ProgrammeSlot),
+});
+export type ProgrammeDayTemplate = z.infer<typeof ProgrammeDayTemplate>;
+
+export const ProgrammeResponse = z.object({
+  phase: z.object({
+    id: z.number(),
+    name: z.string(),
+    start_week: z.number(),
+    end_week: z.number(),
+  }),
+  day_templates: z.array(ProgrammeDayTemplate),
+});
+export type ProgrammeResponse = z.infer<typeof ProgrammeResponse>;
+
+// A local cache of GET /api/programme — one row, refreshed whenever Today
+// loads successfully (same trigger as cacheExerciseLibrary). The Week View
+// (M8) reads this for *prescribed* coverage; it's phase-wide and constant
+// across weeks, so unlike todayCache there's nothing to key by date/session.
+export const CachedProgramme = z.object({
+  id: z.literal(1),
+  cachedAt: z.string(),
+  data: ProgrammeResponse,
+});
+export type CachedProgramme = z.infer<typeof CachedProgramme>;
+
 // A local cache of a GET /api/today response, written while online (e.g. from
 // the Today screen) so the offline-first session runner (M4) can read it
 // without ever awaiting the network — see docs/architecture.md §B2.

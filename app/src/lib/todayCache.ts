@@ -17,3 +17,14 @@ export async function cacheToday(data: TodayResponse): Promise<void> {
 export async function getCachedToday(sessionId: number) {
   return db.todayCache.get(sessionId);
 }
+
+// session_id → its local calendar date, for every session ever viewed on
+// this device. Used by the Week View (M8) to know which calendar day a
+// logged set belongs to — deliberately *not* derived from a set's
+// `logged_at` timestamp (UTC, via toISOString — could misattribute a set
+// logged near local midnight to the wrong day/week). A session is only ever
+// reachable through Today, so every session that ran has a todayCache row.
+export async function getAllCachedSessionDates(): Promise<Map<number, string>> {
+  const rows = await db.todayCache.toArray();
+  return new Map(rows.map((r) => [r.sessionId, r.date]));
+}

@@ -3,6 +3,7 @@
 // sync worker (M9) drains `outbox` to the server when connectivity returns.
 import Dexie, { type Table } from 'dexie';
 import type {
+  CachedProgramme,
   CachedToday,
   CardioLog,
   Exercise,
@@ -24,6 +25,7 @@ export class AppDatabase extends Dexie {
   proteinLogs!: Table<ProteinLog, string>;
   mobilityLogs!: Table<MobilityLog, string>;
   cardioLogs!: Table<CardioLog, number>;
+  programmeCache!: Table<CachedProgramme, number>;
 
   constructor() {
     super('anyway');
@@ -61,6 +63,12 @@ export class AppDatabase extends Dexie {
       proteinLogs: 'date',
       mobilityLogs: 'date',
       cardioLogs: '++id, date, modality, [date+modality]',
+    });
+    // M8: the active phase's full week structure (GET /api/programme), so
+    // the Week View can compute prescribed coverage offline — see
+    // src/lib/programmeCache.ts, src/lib/types.ts#CachedProgramme.
+    this.version(5).stores({
+      programmeCache: 'id',
     });
   }
 }

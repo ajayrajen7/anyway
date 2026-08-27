@@ -1,6 +1,6 @@
 // Thin fetch wrapper for the Go API (docs/architecture.md §B5). Auth is a
 // single static bearer token (B1) — no session/cookie plumbing, one user.
-import { Exercise, TodayResponse } from './types';
+import { Exercise, ProgrammeResponse, TodayResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? '';
@@ -46,4 +46,13 @@ export async function getToday(date: string): Promise<TodayResponse> {
 export async function getExerciseLibrary(): Promise<Exercise[]> {
   const raw = await apiFetch<unknown>('/api/exercises?include_blocked=1');
   return Exercise.array().parse(raw);
+}
+
+// GET /api/programme — the active phase's full week structure (M8
+// amendment to §B5, see memory.md). Only called while online (from
+// src/lib/programmeCache.ts, triggered by Today.tsx) to refresh the Week
+// View's offline cache — the Week screen itself never calls the network.
+export async function getProgramme(): Promise<ProgrammeResponse> {
+  const raw = await apiFetch<unknown>('/api/programme');
+  return ProgrammeResponse.parse(raw);
 }

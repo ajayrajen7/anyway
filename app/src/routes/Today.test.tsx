@@ -12,8 +12,9 @@ vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
   return { ...actual, getToday: getTodayMock };
 });
-// cacheExerciseLibrary would otherwise attempt a real fetch — stub it out.
+// cacheExerciseLibrary/cacheProgramme would otherwise attempt a real fetch — stub them out.
 vi.mock('../lib/exerciseCache', () => ({ cacheExerciseLibrary: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('../lib/programmeCache', () => ({ cacheProgramme: vi.fn().mockResolvedValue(undefined) }));
 // isAfter6pm is mocked directly (default false) rather than faking system
 // time — vi.useFakeTimers() fights Testing Library's own internal timers
 // used by findBy*/waitFor, since date.test.ts already covers isAfter6pm's
@@ -68,6 +69,7 @@ describe('Today screen', () => {
     expect(screen.getByText('6 exercises · ~55 min')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'Start session' });
     expect(link).toHaveAttribute('href', '/session/42');
+    expect(screen.getByRole('link', { name: 'This week →' })).toHaveAttribute('href', '/week');
   });
 
   it('renders the cardio/mobility day without a Start session link', async () => {

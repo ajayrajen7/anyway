@@ -155,6 +155,7 @@ GET  /api/weigh-ins                 → 423 Locked before start+84d
 POST /api/protein                   → { date, hit }
 POST /api/cardio                    → { date, modality, duration_min }
 GET  /api/week?start=               → coverage actual/prescribed + volume + 7 pain values
+GET  /api/programme                 → active phase's full week structure (day_templates + slots) — M8 addition, see below
 POST /api/sync                      → outbox drain, idempotent by client uuid
 GET  /api/export                    → full JSON dump
 ```
@@ -162,6 +163,8 @@ GET  /api/export                    → full JSON dump
 Every write carries a client-generated UUID so outbox replays are idempotent.
 
 **Amendment (M3):** `GET /api/today` takes an explicit `date` query param — the client's *local* calendar day (`YYYY-MM-DD`), not the server's. The server cannot otherwise know the user's timezone, and "which day is today" must be the same day the user is actually living, not wherever the box happens to be hosted. Falls back to the server's own local date only if omitted (a convenience for manual/curl testing, not something the frontend should rely on).
+
+**Amendment (M8):** `GET /api/week` as specified assumes the server already has synced "actual" data (logged sets, morning checks) to aggregate — i.e. that M9's sync worker exists and has run. It doesn't yet, and every mutation since M4 has deliberately stayed local-first (Dexie + outbox, server sync deferred to M9). Rather than build `GET /api/week` now and have it always return zeros, M8 adds **`GET /api/programme`** — a plain read of the active phase's day_templates + slots, no date range, cached client-side once (it's phase-wide and constant across weeks) the same way the exercise library is. The Week View computes *both* prescribed coverage (from this cache) and actual coverage (from local `loggedSets`/`morningChecks`) entirely client-side. `GET /api/week` stays an unbuilt stub until M9 makes server-side "actual" data real; §B4's query is exactly what the client-side computation reproduces in TypeScript (see `src/lib/week.ts`).
 
 ## B6. Frontend rules Claude Code must enforce
 

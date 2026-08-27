@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAfter6pm, localDateKey } from './date';
+import { isAfter6pm, localDateKey, parseDateKey } from './date';
 
 describe('localDateKey', () => {
   it('formats a local date as YYYY-MM-DD', () => {
@@ -26,5 +26,20 @@ describe('isAfter6pm', () => {
   it('is true at and after 18:00', () => {
     expect(isAfter6pm(new Date(2026, 0, 5, 18, 0))).toBe(true);
     expect(isAfter6pm(new Date(2026, 0, 5, 23, 30))).toBe(true);
+  });
+});
+
+describe('parseDateKey', () => {
+  it('round-trips with localDateKey', () => {
+    expect(localDateKey(parseDateKey('2026-01-05'))).toBe('2026-01-05');
+  });
+
+  it('parses via local components, not UTC', () => {
+    // new Date('2026-01-05') would be UTC midnight, which is the previous
+    // local day in any timezone ahead of UTC — parseDateKey must not do that.
+    const d = parseDateKey('2026-01-05');
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(0);
+    expect(d.getDate()).toBe(5);
   });
 });
