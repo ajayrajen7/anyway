@@ -1,0 +1,1415 @@
+[
+  {
+    "slug": "leg-press",
+    "name": "Leg press",
+    "equipment": "machine",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.5,
+      "hamstrings": 0.3
+    }
+  },
+  {
+    "slug": "leg-press-sl",
+    "name": "Single-leg leg press",
+    "equipment": "machine",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.5
+    }
+  },
+  {
+    "slug": "goblet-squat",
+    "name": "Goblet squat",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.5,
+      "core": 0.3
+    }
+  },
+  {
+    "slug": "goblet-squat-heel-elev",
+    "name": "Heel-elevated goblet squat",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.3
+    }
+  },
+  {
+    "slug": "rfe-split-squat",
+    "name": "Rear-foot-elevated split squat",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.7,
+      "adductors": 0.3
+    }
+  },
+  {
+    "slug": "split-squat",
+    "name": "Split squat",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.5
+    }
+  },
+  {
+    "slug": "reverse-lunge",
+    "name": "Reverse lunge",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "low",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 0.7,
+      "glutes": 1
+    }
+  },
+  {
+    "slug": "walking-lunge",
+    "name": "Walking lunge",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "low",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 0.8,
+      "glutes": 0.8
+    }
+  },
+  {
+    "slug": "step-up",
+    "name": "Step-up (20–25cm)",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "low",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.7
+    }
+  },
+  {
+    "slug": "lateral-step-up",
+    "name": "Lateral step-up",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "low",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.5
+    }
+  },
+  {
+    "slug": "spanish-squat",
+    "name": "Spanish squat isometric",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1
+    }
+  },
+  {
+    "slug": "wall-sit",
+    "name": "Wall sit",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1
+    }
+  },
+  {
+    "slug": "cyclist-squat",
+    "name": "Cyclist squat",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.3
+    }
+  },
+  {
+    "slug": "landmine-squat",
+    "name": "Landmine squat",
+    "equipment": "landmine",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.5
+    }
+  },
+  {
+    "slug": "leg-extension-band",
+    "name": "Band leg extension",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "quads": 1
+    }
+  },
+  {
+    "slug": "hip-thrust",
+    "name": "Hip thrust",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "glutes": 1,
+      "hamstrings": 0.5
+    }
+  },
+  {
+    "slug": "hip-thrust-sl",
+    "name": "Single-leg hip thrust",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "glutes": 1,
+      "hamstrings": 0.5
+    }
+  },
+  {
+    "slug": "glute-bridge",
+    "name": "Glute bridge",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "glutes": 1,
+      "hamstrings": 0.3
+    }
+  },
+  {
+    "slug": "glute-bridge-band",
+    "name": "Band glute bridge",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "glutes": 1
+    }
+  },
+  {
+    "slug": "sl-rdl",
+    "name": "Single-leg Romanian deadlift",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "hamstrings": 1,
+      "glutes": 0.7,
+      "erectors": 0.3
+    }
+  },
+  {
+    "slug": "db-rdl",
+    "name": "Dumbbell RDL",
+    "equipment": "dumbbell",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "hamstrings": 1,
+      "glutes": 0.7,
+      "erectors": 0.5
+    }
+  },
+  {
+    "slug": "back-extension-45",
+    "name": "45° back extension",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "erectors": 1,
+      "glutes": 0.7,
+      "hamstrings": 0.5
+    }
+  },
+  {
+    "slug": "sliding-leg-curl",
+    "name": "Sliding leg curl (towel)",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "hamstrings": 1,
+      "glutes": 0.3
+    }
+  },
+  {
+    "slug": "band-leg-curl",
+    "name": "Band leg curl",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "hamstrings": 1
+    }
+  },
+  {
+    "slug": "nordic-curl-ecc",
+    "name": "Nordic curl (eccentric)",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "hamstrings": 1
+    }
+  },
+  {
+    "slug": "hip-abduction-band",
+    "name": "Side-lying band abduction",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "glutes": 1
+    }
+  },
+  {
+    "slug": "lateral-band-walk",
+    "name": "Lateral band walk",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "glutes": 1
+    }
+  },
+  {
+    "slug": "copenhagen-short",
+    "name": "Copenhagen plank (short lever)",
+    "equipment": "bodyweight",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": "close to groin symptoms — introduce only in Phase 3",
+    "muscles": {
+      "adductors": 1,
+      "core": 0.5
+    }
+  },
+  {
+    "slug": "adductor-squeeze",
+    "name": "Adductor squeeze isometric",
+    "equipment": "bodyweight",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": "close to groin symptoms — introduce only in Phase 3",
+    "muscles": {
+      "adductors": 1
+    }
+  },
+  {
+    "slug": "good-morning-seated",
+    "name": "Seated good morning (light)",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "hamstrings": 1,
+      "erectors": 0.5
+    }
+  },
+  {
+    "slug": "calf-raise-standing",
+    "name": "Standing calf raise (straight knee)",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "calves": 1
+    }
+  },
+  {
+    "slug": "calf-raise-seated",
+    "name": "Seated calf raise (bent knee)",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "calves": 1
+    }
+  },
+  {
+    "slug": "calf-raise-standing-sl",
+    "name": "Single-leg standing calf raise",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "calves": 1
+    }
+  },
+  {
+    "slug": "calf-raise-seated-sl",
+    "name": "Single-leg seated calf raise",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "calves": 1
+    }
+  },
+  {
+    "slug": "calf-raise-toes-elev",
+    "name": "Heel raise, towel under toes",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "calves": 1,
+      "foot": 0.5
+    }
+  },
+  {
+    "slug": "tibialis-raise",
+    "name": "Tibialis raise (wall)",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "tibialis": 1
+    }
+  },
+  {
+    "slug": "short-foot",
+    "name": "Short foot exercise",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "foot": 1
+    }
+  },
+  {
+    "slug": "towel-scrunch",
+    "name": "Towel scrunch",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "foot": 1
+    }
+  },
+  {
+    "slug": "db-bench",
+    "name": "Dumbbell bench press",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "chest": 1,
+      "triceps": 0.5,
+      "delts_front": 0.5
+    }
+  },
+  {
+    "slug": "db-incline-press",
+    "name": "Incline dumbbell press",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "chest": 1,
+      "delts_front": 0.7,
+      "triceps": 0.5
+    }
+  },
+  {
+    "slug": "db-floor-press",
+    "name": "Dumbbell floor press",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "chest": 1,
+      "triceps": 0.5
+    }
+  },
+  {
+    "slug": "push-up",
+    "name": "Push-up",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "chest": 1,
+      "triceps": 0.5,
+      "core": 0.3
+    }
+  },
+  {
+    "slug": "push-up-feet-elev",
+    "name": "Feet-elevated push-up",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "chest": 1,
+      "delts_front": 0.5,
+      "triceps": 0.5
+    }
+  },
+  {
+    "slug": "db-fly-flat",
+    "name": "Dumbbell fly (flat)",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "chest": 1
+    }
+  },
+  {
+    "slug": "db-fly-incline",
+    "name": "Dumbbell fly (incline)",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "chest": 1
+    }
+  },
+  {
+    "slug": "landmine-press-kneel",
+    "name": "Half-kneeling landmine press",
+    "equipment": "landmine",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_front": 1,
+      "chest": 0.5,
+      "triceps": 0.5
+    }
+  },
+  {
+    "slug": "landmine-press-stand",
+    "name": "Standing landmine press",
+    "equipment": "landmine",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_front": 1,
+      "chest": 0.5,
+      "core": 0.5
+    }
+  },
+  {
+    "slug": "db-shoulder-press-seated",
+    "name": "Seated dumbbell shoulder press",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_front": 1,
+      "triceps": 0.5
+    }
+  },
+  {
+    "slug": "db-arnold-press",
+    "name": "Seated Arnold press",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_front": 1,
+      "delts_side": 0.5
+    }
+  },
+  {
+    "slug": "band-chest-press",
+    "name": "Band chest press",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "chest": 1,
+      "triceps": 0.3
+    }
+  },
+  {
+    "slug": "db-row-one-arm",
+    "name": "One-arm dumbbell row (bench-supported)",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "lats": 1,
+      "upper_back": 0.7,
+      "biceps": 0.5
+    }
+  },
+  {
+    "slug": "db-row-chest-supported",
+    "name": "Chest-supported dumbbell row",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "upper_back": 1,
+      "lats": 0.7,
+      "biceps": 0.5
+    }
+  },
+  {
+    "slug": "db-pullover",
+    "name": "Dumbbell pullover",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "lats": 1,
+      "chest": 0.3
+    }
+  },
+  {
+    "slug": "band-lat-pulldown",
+    "name": "Band lat pulldown (half-kneeling)",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "lats": 1,
+      "biceps": 0.5
+    }
+  },
+  {
+    "slug": "band-row-seated",
+    "name": "Seated band row",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "upper_back": 1,
+      "lats": 0.7,
+      "biceps": 0.3
+    }
+  },
+  {
+    "slug": "landmine-row",
+    "name": "Single-arm landmine row",
+    "equipment": "landmine",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "lats": 1,
+      "upper_back": 0.7
+    }
+  },
+  {
+    "slug": "band-face-pull",
+    "name": "Band face pull",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_rear": 1,
+      "upper_back": 0.5
+    }
+  },
+  {
+    "slug": "db-rear-delt-fly",
+    "name": "Chest-supported rear delt fly",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_rear": 1,
+      "upper_back": 0.3
+    }
+  },
+  {
+    "slug": "band-pull-apart",
+    "name": "Band pull-apart",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_rear": 1,
+      "upper_back": 0.3
+    }
+  },
+  {
+    "slug": "inverted-row",
+    "name": "Inverted row",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "upper_back": 1,
+      "lats": 0.7,
+      "biceps": 0.5
+    }
+  },
+  {
+    "slug": "db-shrug",
+    "name": "Dumbbell shrug",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "upper_back": 1
+    }
+  },
+  {
+    "slug": "db-lateral-raise",
+    "name": "Dumbbell lateral raise",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_side": 1
+    }
+  },
+  {
+    "slug": "band-lateral-raise",
+    "name": "Band lateral raise",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "delts_side": 1
+    }
+  },
+  {
+    "slug": "db-curl",
+    "name": "Dumbbell curl",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "biceps": 1
+    }
+  },
+  {
+    "slug": "db-hammer-curl",
+    "name": "Hammer curl",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "biceps": 1
+    }
+  },
+  {
+    "slug": "db-incline-curl",
+    "name": "Incline dumbbell curl",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "biceps": 1
+    }
+  },
+  {
+    "slug": "db-oh-triceps-ext",
+    "name": "Seated overhead triceps extension",
+    "equipment": "dumbbell",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "triceps": 1
+    }
+  },
+  {
+    "slug": "db-skullcrusher",
+    "name": "Dumbbell skullcrusher",
+    "equipment": "dumbbell",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "triceps": 1
+    }
+  },
+  {
+    "slug": "bench-dip",
+    "name": "Bench dip",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "triceps": 1,
+      "chest": 0.3
+    }
+  },
+  {
+    "slug": "band-triceps-pushdown",
+    "name": "Band triceps pushdown",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "triceps": 1
+    }
+  },
+  {
+    "slug": "pallof-press",
+    "name": "Band Pallof press",
+    "equipment": "band",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "core": 1
+    }
+  },
+  {
+    "slug": "dead-bug",
+    "name": "Dead bug",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "core": 1
+    }
+  },
+  {
+    "slug": "side-plank",
+    "name": "Side plank",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": true,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "core": 1
+    }
+  },
+  {
+    "slug": "bird-dog",
+    "name": "Bird dog",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "core": 1,
+      "erectors": 0.5
+    }
+  },
+  {
+    "slug": "plank",
+    "name": "Front plank",
+    "equipment": "bodyweight",
+    "pressure": "moderate",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": false,
+    "block_reason": null,
+    "caution": null,
+    "muscles": {
+      "core": 1
+    }
+  },
+  {
+    "slug": "conventional-deadlift",
+    "name": "Conventional deadlift",
+    "equipment": "barbell",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": true,
+    "block_reason": "Braced hinge — high intra-abdominal pressure",
+    "caution": null,
+    "muscles": {
+      "hamstrings": 1,
+      "glutes": 1,
+      "erectors": 1,
+      "lats": 0.3
+    }
+  },
+  {
+    "slug": "barbell-rdl",
+    "name": "Barbell RDL",
+    "equipment": "barbell",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": true,
+    "block_reason": "Braced hinge — high intra-abdominal pressure",
+    "caution": null,
+    "muscles": {
+      "hamstrings": 1,
+      "glutes": 0.7,
+      "erectors": 0.5
+    }
+  },
+  {
+    "slug": "back-squat-loaded",
+    "name": "Back squat (loaded)",
+    "equipment": "barbell",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": true,
+    "block_reason": "Braced spinal loading",
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.7,
+      "erectors": 0.3
+    }
+  },
+  {
+    "slug": "standing-barbell-ohp",
+    "name": "Standing barbell overhead press",
+    "equipment": "barbell",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": true,
+    "block_reason": "Standing brace under load",
+    "caution": null,
+    "muscles": {
+      "delts_front": 1,
+      "triceps": 0.5,
+      "core": 0.3
+    }
+  },
+  {
+    "slug": "kettlebell-swing",
+    "name": "Kettlebell swing",
+    "equipment": "kettlebell",
+    "pressure": "high",
+    "impact": "low",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": true,
+    "block_reason": "Braced hinge + ballistic",
+    "caution": null,
+    "muscles": {
+      "glutes": 1,
+      "hamstrings": 0.5,
+      "core": 0.3
+    }
+  },
+  {
+    "slug": "farmers-carry-heavy",
+    "name": "Farmer's carry (heavy)",
+    "equipment": "dumbbell",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 2.5,
+    "blocked": true,
+    "block_reason": "Sustained intra-abdominal pressure",
+    "caution": null,
+    "muscles": {
+      "core": 1,
+      "upper_back": 0.5
+    }
+  },
+  {
+    "slug": "hanging-leg-raise",
+    "name": "Hanging leg raise",
+    "equipment": "bodyweight",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": true,
+    "block_reason": "High intra-abdominal pressure",
+    "caution": null,
+    "muscles": {
+      "core": 1
+    }
+  },
+  {
+    "slug": "ab-wheel-rollout",
+    "name": "Ab wheel rollout",
+    "equipment": "bodyweight",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": true,
+    "block_reason": "High intra-abdominal pressure",
+    "caution": null,
+    "muscles": {
+      "core": 1
+    }
+  },
+  {
+    "slug": "sit-up-crunch",
+    "name": "Sit-up / crunch",
+    "equipment": "bodyweight",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": true,
+    "block_reason": "Spinal flexion under pressure",
+    "caution": null,
+    "muscles": {
+      "core": 1
+    }
+  },
+  {
+    "slug": "hollow-hold",
+    "name": "Hollow hold",
+    "equipment": "bodyweight",
+    "pressure": "high",
+    "impact": "none",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": true,
+    "block_reason": "Sustained bracing",
+    "caution": null,
+    "muscles": {
+      "core": 1
+    }
+  },
+  {
+    "slug": "box-jump",
+    "name": "Box jump",
+    "equipment": "bodyweight",
+    "pressure": "moderate",
+    "impact": "high",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": true,
+    "block_reason": "Impact — knee",
+    "caution": null,
+    "muscles": {
+      "quads": 1,
+      "glutes": 0.5
+    }
+  },
+  {
+    "slug": "running",
+    "name": "Running",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "high",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": true,
+    "block_reason": "Impact — knee and Achilles",
+    "caution": null,
+    "muscles": {
+      "quads": 0.5,
+      "hamstrings": 0.3,
+      "calves": 0.5
+    }
+  },
+  {
+    "slug": "skipping",
+    "name": "Skipping",
+    "equipment": "bodyweight",
+    "pressure": "low",
+    "impact": "high",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": true,
+    "block_reason": "Impact — knee and Achilles",
+    "caution": null,
+    "muscles": {
+      "calves": 1,
+      "quads": 0.3
+    }
+  },
+  {
+    "slug": "burpee",
+    "name": "Burpee",
+    "equipment": "bodyweight",
+    "pressure": "high",
+    "impact": "high",
+    "unilateral": false,
+    "increment_kg": 1,
+    "blocked": true,
+    "block_reason": "Impact — knee and Achilles",
+    "caution": null,
+    "muscles": {
+      "quads": 0.5,
+      "chest": 0.3,
+      "core": 0.5
+    }
+  }
+]

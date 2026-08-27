@@ -25,6 +25,12 @@ func Open(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	// One connection only. This is a single-user server and SQLite serializes
+	// writes anyway; for ":memory:" it also avoids database/sql's pool handing
+	// out a second connection that would see a *different*, empty in-memory
+	// database (each new "sqlite" connection to ":memory:" is otherwise its
+	// own database).
+	conn.SetMaxOpenConns(1)
 	if err := migrate(conn); err != nil {
 		conn.Close()
 		return nil, err
