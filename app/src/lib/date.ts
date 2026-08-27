@@ -10,3 +10,9 @@ export function localDateKey(d: Date = new Date()): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+// "After 18:00, a Protein — hit 120g? row" (prd.md §A3.2) — local wall-clock
+// time, same reasoning as localDateKey.
+export function isAfter6pm(d: Date = new Date()): boolean {
+  return d.getHours() >= 18;
+}

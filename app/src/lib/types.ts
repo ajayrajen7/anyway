@@ -57,6 +57,32 @@ export const MorningCheck = z.object({
 });
 export type MorningCheck = z.infer<typeof MorningCheck>;
 
+// --- Protein / mobility / cardio (M7, prd.md §A3.2/§A3.6) ---
+
+export const ProteinLog = z.object({
+  date: z.string(),
+  hit: z.boolean(),
+});
+export type ProteinLog = z.infer<typeof ProteinLog>;
+
+// Presence = done. There is deliberately no `done: false` row — unchecking
+// the box deletes the row rather than writing a negative value (mirrors the
+// "absence, never a default" discipline used for morning_checks, applied
+// here because a checkbox's natural semantics are "logged" vs "not", not a
+// meaningful yes/no like protein's).
+export const MobilityLog = z.object({
+  date: z.string(),
+});
+export type MobilityLog = z.infer<typeof MobilityLog>;
+
+export const CardioLog = z.object({
+  id: z.number().optional(),
+  date: z.string(),
+  modality: z.string(),
+  duration_min: z.number(),
+});
+export type CardioLog = z.infer<typeof CardioLog>;
+
 // --- GET /api/today (docs/architecture.md §B5, M3) ---
 
 export const ExerciseRef = z.object({

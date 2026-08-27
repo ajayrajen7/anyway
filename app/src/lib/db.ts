@@ -2,7 +2,17 @@
 // runner reads/writes here only and never awaits a network call. A background
 // sync worker (M9) drains `outbox` to the server when connectivity returns.
 import Dexie, { type Table } from 'dexie';
-import type { CachedToday, Exercise, LoggedSet, MorningCheck, OutboxEntry, SessionOverlay } from './types';
+import type {
+  CachedToday,
+  CardioLog,
+  Exercise,
+  LoggedSet,
+  MobilityLog,
+  MorningCheck,
+  OutboxEntry,
+  ProteinLog,
+  SessionOverlay,
+} from './types';
 
 export class AppDatabase extends Dexie {
   exercises!: Table<Exercise, number>;
@@ -11,6 +21,9 @@ export class AppDatabase extends Dexie {
   outbox!: Table<OutboxEntry, number>;
   todayCache!: Table<CachedToday, number>;
   sessionOverlay!: Table<SessionOverlay, number>;
+  proteinLogs!: Table<ProteinLog, string>;
+  mobilityLogs!: Table<MobilityLog, string>;
+  cardioLogs!: Table<CardioLog, number>;
 
   constructor() {
     super('anyway');
@@ -39,6 +52,15 @@ export class AppDatabase extends Dexie {
     this.version(3).stores({
       exercises: 'id, slug, blocked, name',
       sessionOverlay: 'sessionId',
+    });
+    // M7: protein (yes/no, always a real value once answered), mobility
+    // (presence-only — see src/lib/types.ts#MobilityLog), and cardio
+    // (one row per date+modality by convention, enforced in
+    // src/lib/dailyLogs.ts, not by a DB constraint).
+    this.version(4).stores({
+      proteinLogs: 'date',
+      mobilityLogs: 'date',
+      cardioLogs: '++id, date, modality, [date+modality]',
     });
   }
 }

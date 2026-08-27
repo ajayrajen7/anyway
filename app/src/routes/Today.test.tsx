@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../lib/api';
@@ -6,13 +7,21 @@ import { db } from '../lib/db';
 import type { TodayResponse } from '../lib/types';
 import Today from './Today';
 
-const { getTodayMock } = vi.hoisted(() => ({ getTodayMock: vi.fn() }));
+const { getTodayMock, isAfter6pmMock } = vi.hoisted(() => ({ getTodayMock: vi.fn(), isAfter6pmMock: vi.fn(() => false) }));
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
   return { ...actual, getToday: getTodayMock };
 });
 // cacheExerciseLibrary would otherwise attempt a real fetch — stub it out.
 vi.mock('../lib/exerciseCache', () => ({ cacheExerciseLibrary: vi.fn().mockResolvedValue(undefined) }));
+// isAfter6pm is mocked directly (default false) rather than faking system
+// time — vi.useFakeTimers() fights Testing Library's own internal timers
+// used by findBy*/waitFor, since date.test.ts already covers isAfter6pm's
+// own logic in isolation.
+vi.mock('../lib/date', async () => {
+  const actual = await vi.importActual<typeof import('../lib/date')>('../lib/date');
+  return { ...actual, isAfter6pm: isAfter6pmMock };
+});
 
 function renderToday() {
   return render(
@@ -24,7 +33,12 @@ function renderToday() {
 
 afterEach(async () => {
   getTodayMock.mockReset();
+  isAfter6pmMock.mockReset().mockReturnValue(false);
   await db.todayCache.clear();
+  await db.proteinLogs.clear();
+  await db.mobilityLogs.clear();
+  await db.cardioLogs.clear();
+  await db.outbox.clear();
 });
 
 const liftingDay: TodayResponse = {
@@ -89,5 +103,124 @@ describe('Today screen', () => {
     renderToday();
 
     expect(await screen.findByText(/no active phase/i)).toBeInTheDocument();
+  });
+
+  it('shows a Mobility checkbox on a lifting day, and checking it persists', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue(liftingDay);
+    renderToday();
+
+    const checkbox = await screen.findByRole('checkbox', { name: 'Mobility (10 min)' });
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(checkbox);
+    await waitFor(() => expect(checkbox).toBeChecked());
+    expect(await db.mobilityLogs.get('2026-01-05')).toEqual({ date: '2026-01-05' });
+  });
+
+  it('hides the protein row before 18:00', async () => {
+    isAfter6pmMock.mockReturnValue(false);
+    getTodayMock.mockResolvedValue(liftingDay);
+    renderToday();
+    await screen.findByRole('heading', { name: 'Lower A' });
+    expect(screen.queryByText('Protein — hit 120g?')).not.toBeInTheDocument();
+  });
+
+  it('shows a working protein Yes/No row after 18:00', async () => {
+    isAfter6pmMock.mockReturnValue(true);
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue(liftingDay);
+    renderToday();
+    await screen.findByText('Protein — hit 120g?');
+    await user.click(screen.getByRole('button', { name: 'No' }));
+
+    expect(await db.proteinLogs.get('2026-01-05')).toEqual({ date: '2026-01-05', hit: false });
+  });
+
+  it('on a cardio_mobility day (Wed), shows the cross-trainer checkbox defaulting to 20 min and logs on check', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue({
+      date: '2026-01-07',
+      weekday: 3,
+      day_template: { id: 3, name: 'Mobility + Zone 2', kind: 'cardio_mobility' },
+      session: null,
+      slots: [],
+    } satisfies TodayResponse);
+    renderToday();
+
+    const checkbox = await screen.findByRole('checkbox', { name: 'Cross trainer' });
+    expect(screen.getByText('20 min')).toBeInTheDocument();
+    await user.click(checkbox);
+
+    const stored = await db.cardioLogs.where({ date: '2026-01-07', modality: 'cross-trainer' }).first();
+    expect(stored).toMatchObject({ duration_min: 20 });
+  });
+
+  it('on a cardio_mobility day (Sat), defaults the incline-walk duration to 15 min', async () => {
+    getTodayMock.mockResolvedValue({
+      date: '2026-01-10',
+      weekday: 6,
+      day_template: { id: 6, name: 'Mobility + Incline Walk', kind: 'cardio_mobility' },
+      session: null,
+      slots: [],
+    } satisfies TodayResponse);
+    renderToday();
+
+    await screen.findByRole('checkbox', { name: 'Incline walk' });
+    expect(screen.getByText('15 min')).toBeInTheDocument();
+  });
+
+  it('adjusting the duration stepper while checked keeps the logged entry in sync', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue({
+      date: '2026-01-07',
+      weekday: 3,
+      day_template: { id: 3, name: 'Mobility + Zone 2', kind: 'cardio_mobility' },
+      session: null,
+      slots: [],
+    } satisfies TodayResponse);
+    renderToday();
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Cross trainer' }));
+    await user.click(screen.getByRole('button', { name: 'Increase minutes' }));
+
+    expect(screen.getByText('25 min')).toBeInTheDocument();
+    const stored = await db.cardioLogs.where({ date: '2026-01-07', modality: 'cross-trainer' }).first();
+    expect(stored?.duration_min).toBe(25);
+  });
+
+  it('checking Full mobility, expanding the checklist, and tapping Done closes the day in 3 taps', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue({
+      date: '2026-01-07',
+      weekday: 3,
+      day_template: { id: 3, name: 'Mobility + Zone 2', kind: 'cardio_mobility' },
+      session: null,
+      slots: [],
+    } satisfies TodayResponse);
+    renderToday();
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Cross trainer' })); // tap 1
+    await user.click(screen.getByRole('checkbox', { name: /Full mobility/ })); // tap 2
+    await user.click(screen.getByRole('button', { name: 'Done' })); // tap 3
+
+    expect(await screen.findByText('Done for today.')).toBeInTheDocument();
+    expect(await db.mobilityLogs.get('2026-01-07')).toEqual({ date: '2026-01-07' });
+  });
+
+  it('View expands the 12-item mobility checklist (ticks are not persisted)', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue({
+      date: '2026-01-07',
+      weekday: 3,
+      day_template: { id: 3, name: 'Mobility + Zone 2', kind: 'cardio_mobility' },
+      session: null,
+      slots: [],
+    } satisfies TodayResponse);
+    renderToday();
+
+    await user.click(await screen.findByRole('button', { name: 'View' }));
+    expect(screen.getByText('Knee-to-wall dorsiflexion')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2 + 12); // cross-trainer + full-mobility + 12 item ticks
   });
 });

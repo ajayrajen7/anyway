@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localDateKey } from './date';
+import { isAfter6pm, localDateKey } from './date';
 
 describe('localDateKey', () => {
   it('formats a local date as YYYY-MM-DD', () => {
@@ -16,5 +16,15 @@ describe('localDateKey', () => {
     // UTC day. toISOString() would get this wrong; localDateKey must not.
     const lateEvening = new Date(2026, 0, 5, 23, 30);
     expect(localDateKey(lateEvening)).toBe('2026-01-05');
+  });
+});
+
+describe('isAfter6pm', () => {
+  it('is false before 18:00', () => {
+    expect(isAfter6pm(new Date(2026, 0, 5, 17, 59))).toBe(false);
+  });
+  it('is true at and after 18:00', () => {
+    expect(isAfter6pm(new Date(2026, 0, 5, 18, 0))).toBe(true);
+    expect(isAfter6pm(new Date(2026, 0, 5, 23, 30))).toBe(true);
   });
 });
