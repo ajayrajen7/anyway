@@ -289,6 +289,46 @@ func TestPostSyncDrainsABatchAndReportsPerEntry(t *testing.T) {
 	}
 }
 
+func TestGetExportDumpsDataAndGatesWeighInsOnTheVault(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.Exec(`INSERT INTO exercises (slug, name, equipment, pressure, impact, increment_kg) VALUES ('squat','Squat','barbell','moderate','low',2.5)`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := conn.Exec(`INSERT INTO weigh_ins (date, weight_kg) VALUES ('2026-01-04', 82.5)`); err != nil {
+		t.Fatalf("seed weigh-in: %v", err)
+	}
+
+	router := api.NewRouter(conn, "secret")
+	req := httptest.NewRequest(http.MethodGet, "/api/export", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var dump struct {
+		VaultLocked bool                        `json:"vault_locked"`
+		Tables      map[string][]map[string]any `json:"tables"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &dump); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !dump.VaultLocked {
+		t.Fatalf("expected vault_locked=true with no programme_start_date set")
+	}
+	if len(dump.Tables["exercises"]) != 1 {
+		t.Fatalf("expected the seeded exercise in the dump, got %+v", dump.Tables["exercises"])
+	}
+	if len(dump.Tables["weigh_ins"]) != 0 {
+		t.Fatalf("expected weigh_ins omitted while the vault is locked, got %+v", dump.Tables["weigh_ins"])
+	}
+}
+
 func TestPostMobilityRouteExists(t *testing.T) {
 	conn, err := db.Open(":memory:")
 	if err != nil {

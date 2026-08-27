@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/ajayrajen7/anyway/server/internal/export"
 	"github.com/ajayrajen7/anyway/server/internal/phase"
 	"github.com/ajayrajen7/anyway/server/internal/seed"
 	"github.com/ajayrajen7/anyway/server/internal/settings"
@@ -68,7 +69,7 @@ func NewRouter(conn *sql.DB, token string) http.Handler {
 		// user-facing benefit — out of v1 scope. See memory.md (M9).
 		r.Get("/week", notImplemented)
 		r.Post("/sync", postSync(conn))
-		r.Get("/export", notImplemented)
+		r.Get("/export", getExport(conn)) // M10 — full JSON dump, weigh_ins omitted while the Vault is locked
 	})
 
 	return r
@@ -347,5 +348,19 @@ func postSync(conn *sql.DB) http.HandlerFunc {
 		}
 		results := syncpkg.Drain(r.Context(), conn, entries)
 		json.NewEncoder(w).Encode(results)
+	}
+}
+
+// getExport implements GET /api/export (M10) — a full JSON dump of every
+// table, for the user's own portability/backup. See internal/export's doc
+// comment for why `weigh_ins` is the one table gated by the Vault here too.
+func getExport(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		dump, err := export.Build(r.Context(), conn, time.Now())
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
+		json.NewEncoder(w).Encode(dump)
 	}
 }

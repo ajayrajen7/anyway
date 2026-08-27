@@ -18,4 +18,6 @@ cd app && npm install && cp .env.example .env.local && npm run dev
 cd server && ANYWAY_API_TOKEN=devtoken go run ./cmd/server
 ```
 
+The server also runs a nightly `VACUUM INTO` backup (docs/architecture.md §B2) — `ANYWAY_BACKUP_DIR` (default `backups`), `ANYWAY_BACKUP_HOUR` (default `3`, local time), `ANYWAY_BACKUP_KEEP` (default `30`, oldest pruned first). No off-box copy is wired up yet — see `server/internal/backup`'s doc comment and `memory.md`.
+
 See `CLAUDE.md` for the full operating contract and `docs/implementation-plan.md` for build order and commands.

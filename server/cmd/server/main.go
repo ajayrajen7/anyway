@@ -2,11 +2,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/ajayrajen7/anyway/server/internal/api"
+	"github.com/ajayrajen7/anyway/server/internal/backup"
 	"github.com/ajayrajen7/anyway/server/internal/db"
 )
 
@@ -24,6 +27,14 @@ func main() {
 	}
 	defer conn.Close()
 
+	// Nightly VACUUM INTO backup (docs/architecture.md §B2, M10). Off-box
+	// copy is deliberately not wired up yet — see internal/backup's doc
+	// comment and memory.md — so `offBox` stays nil for now.
+	backupDir := envOr("ANYWAY_BACKUP_DIR", "backups")
+	backupHour := envIntOr("ANYWAY_BACKUP_HOUR", 3)
+	backupKeep := envIntOr("ANYWAY_BACKUP_KEEP", 30)
+	go backup.RunNightly(context.Background(), conn, backupDir, backupHour, backupKeep, nil, log.Printf)
+
 	router := api.NewRouter(conn, token)
 	log.Printf("listening on %s (db: %s)", addr, dbPath)
 	log.Fatal(http.ListenAndServe(addr, router))
@@ -34,4 +45,16 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envIntOr(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		log.Fatalf("%s must be an integer, got %q", key, v)
+	}
+	return n
 }
