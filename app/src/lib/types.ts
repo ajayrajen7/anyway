@@ -72,6 +72,7 @@ const Actual = z.object({
 export type Actual = z.infer<typeof Actual>;
 
 const TodaySlot = z.object({
+  id: z.number(), // slots.id — needed for /session/:id/swap/:slotId (M5) and logged_sets.slot_id
   position: z.number(),
   exercise: ExerciseRef,
   sets: z.number(),
@@ -104,6 +105,17 @@ export const TodayResponse = z.object({
   slots: z.array(TodaySlot),
 });
 export type TodayResponse = z.infer<typeof TodayResponse>;
+
+// A local cache of a GET /api/today response, written while online (e.g. from
+// the Today screen) so the offline-first session runner (M4) can read it
+// without ever awaiting the network — see docs/architecture.md §B2.
+export const CachedToday = z.object({
+  sessionId: z.number(), // primary key — only lifting days (which have a session) are cached
+  date: z.string(),
+  cachedAt: z.string(),
+  data: TodayResponse,
+});
+export type CachedToday = z.infer<typeof CachedToday>;
 
 export const OutboxEntry = z.object({
   id: z.number().optional(),

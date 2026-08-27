@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../lib/api';
+import { db } from '../lib/db';
 import type { TodayResponse } from '../lib/types';
 import Today from './Today';
 
@@ -19,8 +20,9 @@ function renderToday() {
   );
 }
 
-afterEach(() => {
+afterEach(async () => {
   getTodayMock.mockReset();
+  await db.todayCache.clear();
 });
 
 const liftingDay: TodayResponse = {
@@ -29,6 +31,7 @@ const liftingDay: TodayResponse = {
   day_template: { id: 1, name: 'Lower A', kind: 'lifting' },
   session: { id: 42, status: 'planned', started_at: null, ended_at: null, note: null },
   slots: Array.from({ length: 6 }, (_, i) => ({
+    id: i + 1,
     position: i + 1,
     exercise: { id: i + 1, slug: `ex-${i}`, name: `Exercise ${i}`, unilateral: false, increment_kg: 2.5 },
     sets: 3,

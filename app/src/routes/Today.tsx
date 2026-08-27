@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, getToday } from '../lib/api';
 import { localDateKey } from '../lib/date';
+import { cacheToday } from '../lib/todayCache';
 import type { TodayResponse } from '../lib/types';
 
 // Fixed weekly session-length estimates from docs/programme.md Part 2 —
@@ -28,7 +29,8 @@ export default function Today() {
   useEffect(() => {
     let cancelled = false;
     getToday(localDateKey())
-      .then((data) => {
+      .then(async (data) => {
+        await cacheToday(data); // so the session runner can run with no signal
         if (!cancelled) setState({ status: 'ready', data });
       })
       .catch((err: unknown) => {

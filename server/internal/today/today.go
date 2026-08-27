@@ -39,6 +39,7 @@ type Actual struct {
 }
 
 type Slot struct {
+	ID         int64         `json:"id"` // slots.id — needed to route into /session/:id/swap/:slotId (M5) and to set logged_sets.slot_id (M4)
 	Position   int           `json:"position"`
 	Exercise   ExerciseRef   `json:"exercise"`
 	Sets       int           `json:"sets"`
@@ -241,6 +242,8 @@ func slotsFor(ctx context.Context, conn *sql.DB, dayTemplateID int64) ([]Slot, e
 	rows.Close() // close before issuing more queries — db.Open caps the pool at one connection
 
 	for i := range out {
+		out[i].slot.ID = out[i].slotID
+
 		swaps, err := swapsFor(ctx, conn, out[i].slotID)
 		if err != nil {
 			return nil, err

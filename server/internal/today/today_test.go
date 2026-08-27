@@ -91,6 +91,9 @@ func TestGetOnLiftingDayCreatesSessionAndReturnsSlots(t *testing.T) {
 	if resp.Slots[0].Exercise.Slug != "leg-press" {
 		t.Fatalf("expected slot 1 to be leg-press, got %s", resp.Slots[0].Exercise.Slug)
 	}
+	if resp.Slots[0].ID == 0 {
+		t.Fatal("expected slot.ID to be populated (needed for /session/:id/swap/:slotId and logged_sets.slot_id)")
+	}
 	if len(resp.Slots[0].Swaps) != 3 {
 		t.Fatalf("expected 3 tier-1 swaps for leg-press, got %d", len(resp.Slots[0].Swaps))
 	}

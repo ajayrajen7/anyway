@@ -1,13 +1,334 @@
-// A3.3 Session Runner (`/session/:id`) — the core screen. One exercise at a time.
-// HARD RULE (B6.1): no <input type="number"> or any focusable text field anywhere
-// in this subtree. Steppers only. This is enforced by a test — see
-// src/routes/SessionRunner.test.tsx (added in M4).
-// TODO(M4): set logging, pre-fill from last actual, rest timer, stepper inputs.
+// A3.3 Session Runner (`/session/:id`) — the core screen. One exercise at a
+// time.
+//
+// HARD RULE (B6.1): no <input type="number"> or any focusable text field
+// anywhere in this subtree. Steppers only — enforced by a test in
+// SessionRunner.test.tsx. There is in fact no <input> element at all below:
+// every value is a <span> toggled into a −/+ stepper of <button>s.
+//
+// Offline-first (B2): this screen reads exclusively from the Dexie cache
+// written by Today.tsx (getCachedToday) and from already-logged sets
+// (loggedSetsFor) — it never calls the API. Every mutation goes through
+// logSet, which writes loggedSets + outbox together.
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { getCachedToday } from '../lib/todayCache';
+import { loggedSetsFor, logSet } from '../lib/outbox';
+import { clampNonNegative, isSwipeLeft, prefillFor } from '../lib/session';
+import type { CachedToday, LoggedSet, TodaySlot } from '../lib/types';
+
+type RowStatus = 'pending' | 'done' | 'skipped';
+interface RowState {
+  status: RowStatus;
+  loadKg: number | null;
+  reps: number;
+  editing: 'weight' | 'reps' | null;
+}
+
+function rowFromExisting(existing: LoggedSet | undefined, slot: TodaySlot): RowState {
+  if (existing) {
+    return { status: existing.status, loadKg: existing.load_kg, reps: existing.reps ?? 0, editing: null };
+  }
+  const prefill = prefillFor(slot);
+  return { status: 'pending', loadKg: prefill.loadKg, reps: prefill.reps, editing: null };
+}
+
 export default function SessionRunner() {
+  const { id } = useParams<{ id: string }>();
+  const sessionId = Number(id);
+  const navigate = useNavigate();
+
+  const [cached, setCached] = useState<CachedToday | null | undefined>(undefined); // undefined = loading
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCachedToday(sessionId).then((c) => {
+      if (!cancelled) setCached(c ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  const slots = cached?.data.slots ?? [];
+  const slot = slots[currentIndex];
+  const isLastExercise = currentIndex >= slots.length - 1;
+
+  function advance() {
+    if (isLastExercise) {
+      navigate(`/session/${sessionId}/done`);
+    } else {
+      setCurrentIndex((i) => i + 1);
+    }
+  }
+
+  if (cached === undefined) {
+    return (
+      <main className="mx-auto max-w-md p-4">
+        <p className="text-sm text-slate-400">Loading…</p>
+      </main>
+    );
+  }
+  if (cached === null || !slot) {
+    return (
+      <main className="mx-auto max-w-md p-4">
+        <p className="text-sm text-slate-400">
+          Session not available offline yet — open Today with a connection first.
+        </p>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-md p-4">
-      <h1 className="text-lg font-medium">Session</h1>
-      <p className="mt-2 text-sm text-slate-400">Scaffold stub.</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-400">
+          Exercise {currentIndex + 1} of {slots.length}
+        </p>
+        <Link to={`/session/${sessionId}/add`} aria-label="More options" className="px-2 text-xl">
+          ⋯
+        </Link>
+      </div>
+
+      {/* Keyed by slot.id: switching exercises mounts a fresh panel with its
+          own rows/rest-timer state, rather than an effect resetting state in
+          place — the state a new exercise starts with is exactly its
+          reconstructed-from-Dexie initial state, nothing to "reset". */}
+      <ExercisePanel key={slot.id} sessionId={sessionId} slot={slot} onAdvance={advance} />
     </main>
+  );
+}
+
+function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot: TodaySlot; onAdvance: () => void }) {
+  const [rows, setRows] = useState<RowState[]>([]);
+  const [rowsReady, setRowsReady] = useState(false);
+  const [restSince, setRestSince] = useState<string | null>(null);
+
+  // Reconstruct this exercise's row state from Dexie on every visit — never
+  // trust only in-memory state (B2: Dexie is the source of truth, not a
+  // cache of it).
+  useEffect(() => {
+    let cancelled = false;
+    loggedSetsFor(sessionId, slot.exercise.id).then((existingBySetIndex) => {
+      if (cancelled) return;
+      const nextRows: RowState[] = [];
+      for (let i = 1; i <= slot.sets; i++) {
+        nextRows.push(rowFromExisting(existingBySetIndex.get(i), slot));
+      }
+      setRows(nextRows);
+      setRowsReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, slot]);
+
+  async function commitRow(rowIndex: number, status: 'done' | 'skipped') {
+    const row = rows[rowIndex];
+    const logged = status === 'done'
+      ? { loadKg: row.loadKg, reps: row.reps }
+      : { loadKg: null, reps: null };
+    await logSet({
+      sessionId,
+      slotId: slot.id,
+      exerciseId: slot.exercise.id,
+      setIndex: rowIndex + 1,
+      loadKg: logged.loadKg,
+      reps: logged.reps,
+      status,
+    });
+    setRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, status, editing: null } : r)));
+    if (status === 'done') setRestSince(new Date().toISOString());
+  }
+
+  async function skipExercise() {
+    await Promise.all(
+      rows.map((r, i) => (r.status === 'pending' ? commitRow(i, 'skipped') : Promise.resolve())),
+    );
+    onAdvance();
+  }
+
+  function updateRow(rowIndex: number, patch: Partial<RowState>) {
+    setRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, ...patch } : r)));
+  }
+
+  return (
+    <>
+      <h1 className="mt-2 text-xl font-semibold uppercase">{slot.exercise.name}</h1>
+      <p className="text-sm text-slate-400">
+        Prescribed: {slot.sets} × {slot.reps} {slot.load_kg != null ? `@ ${slot.load_kg} kg` : ''}
+      </p>
+      {slot.last_actual && (
+        <p className="text-sm text-slate-400">
+          Last time: {slot.sets} × {slot.last_actual.reps} {slot.last_actual.load_kg != null ? `@ ${slot.last_actual.load_kg} kg` : ''}
+        </p>
+      )}
+      {slot.note && <p className="mt-1 text-xs text-slate-500">{slot.note}</p>}
+
+      {restSince && <RestTimer since={restSince} />}
+
+      <div className="mt-4 flex flex-col gap-2">
+        {rowsReady ? (
+          rows.map((row, i) => (
+            <SetRow
+              key={i}
+              index={i}
+              row={row}
+              incrementKg={slot.exercise.increment_kg}
+              onUpdate={(patch) => updateRow(i, patch)}
+              onCommit={() => commitRow(i, 'done')}
+              onSwipeSkip={() => commitRow(i, 'skipped')}
+            />
+          ))
+        ) : (
+          <p className="text-sm text-slate-400">Loading sets…</p>
+        )}
+      </div>
+
+      <div className="mt-6 flex justify-between gap-2">
+        <Link
+          to={`/session/${sessionId}/swap/${slot.id}`}
+          className="flex-1 rounded-md bg-slate-800 py-3 text-center"
+        >
+          Swap
+        </Link>
+        <button type="button" onClick={skipExercise} disabled={!rowsReady} className="flex-1 rounded-md bg-slate-800 py-3 disabled:opacity-50">
+          Skip
+        </button>
+        <button type="button" onClick={onAdvance} disabled={!rowsReady} className="flex-1 rounded-md bg-emerald-600 py-3 disabled:opacity-50">
+          Next →
+        </button>
+      </div>
+    </>
+  );
+}
+
+function RestTimer({ since }: { since: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const intervalId = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(intervalId);
+  }, []);
+  const elapsedSec = Math.max(0, Math.floor((now - new Date(since).getTime()) / 1000));
+  const mm = Math.floor(elapsedSec / 60);
+  const ss = String(elapsedSec % 60).padStart(2, '0');
+  // Passive display only (B6.4) — never a modal, never blocks a tap.
+  return (
+    <p aria-live="polite" className="mt-2 text-xs text-slate-500">
+      Rest: {mm}:{ss}
+    </p>
+  );
+}
+
+function SetRow({
+  index,
+  row,
+  incrementKg,
+  onUpdate,
+  onCommit,
+  onSwipeSkip,
+}: {
+  index: number;
+  row: RowState;
+  incrementKg: number;
+  onUpdate: (patch: Partial<RowState>) => void;
+  onCommit: () => void;
+  onSwipeSkip: () => void;
+}) {
+  const [dragStartX, setDragStartX] = useState<number | null>(null);
+
+  if (row.status !== 'pending') {
+    return (
+      <div
+        data-testid={`set-row-${index}`}
+        className="flex items-center justify-between rounded-md bg-slate-800/50 px-3 py-4 text-slate-500 line-through"
+      >
+        <span>Set {index + 1}</span>
+        <span>
+          {row.loadKg != null ? `${row.loadKg} kg` : 'BW'} × {row.reps}
+        </span>
+        <span className="text-xs no-underline">{row.status}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid={`set-row-${index}`}
+      className="flex items-center justify-between rounded-md bg-slate-800 px-3 py-4"
+      onPointerDown={(e) => setDragStartX(e.clientX)}
+      onPointerUp={(e) => {
+        if (dragStartX != null && isSwipeLeft(e.clientX - dragStartX)) {
+          onSwipeSkip();
+        }
+        setDragStartX(null);
+      }}
+    >
+      <span>Set {index + 1}</span>
+
+      {row.editing === 'weight' ? (
+        <span className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label="Decrease weight"
+            className="h-12 w-12 rounded-full bg-slate-700"
+            onClick={() => onUpdate({ loadKg: clampNonNegative((row.loadKg ?? 0) - incrementKg) })}
+          >
+            −
+          </button>
+          <span>{row.loadKg ?? 0} kg</span>
+          <button
+            type="button"
+            aria-label="Increase weight"
+            className="h-12 w-12 rounded-full bg-slate-700"
+            onClick={() => onUpdate({ loadKg: clampNonNegative((row.loadKg ?? 0) + incrementKg) })}
+          >
+            +
+          </button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => onUpdate({ editing: 'weight' })} className="px-2">
+          {row.loadKg != null ? `${row.loadKg} kg` : 'BW'}
+        </button>
+      )}
+
+      <span>×</span>
+
+      {row.editing === 'reps' ? (
+        <span className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label="Decrease reps"
+            className="h-12 w-12 rounded-full bg-slate-700"
+            onClick={() => onUpdate({ reps: clampNonNegative(row.reps - 1) })}
+          >
+            −
+          </button>
+          <span>{row.reps}</span>
+          <button
+            type="button"
+            aria-label="Increase reps"
+            className="h-12 w-12 rounded-full bg-slate-700"
+            onClick={() => onUpdate({ reps: clampNonNegative(row.reps + 1) })}
+          >
+            +
+          </button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => onUpdate({ editing: 'reps' })} className="px-2">
+          {row.reps}
+        </button>
+      )}
+
+      <button
+        type="button"
+        aria-label={`Log set ${index + 1}`}
+        onClick={onCommit}
+        className="ml-2 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-600 text-xl"
+      >
+        ✓
+      </button>
+    </div>
   );
 }
