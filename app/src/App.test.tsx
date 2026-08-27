@@ -21,12 +21,12 @@ describe('App routing smoke test', () => {
     expect(screen.getByText('Loading…')).toBeInTheDocument();
   });
 
-  it('renders the Morning Check screen at /check with exactly 4 pain buttons', () => {
+  it('renders the Morning Check screen at /check with exactly 4 pain buttons', async () => {
     render(
       <MemoryRouter initialEntries={['/check']}>
         <App />
       </MemoryRouter>,
     );
-    expect(screen.getAllByRole('button')).toHaveLength(4);
+    expect(await screen.findAllByRole('button')).toHaveLength(4);
   });
 });
