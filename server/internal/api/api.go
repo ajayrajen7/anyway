@@ -27,6 +27,7 @@ func NewRouter(conn *sql.DB, token string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(corsMiddleware)
 
 	r.Get("/healthz", healthz(conn))
 
@@ -73,6 +74,33 @@ func NewRouter(conn *sql.DB, token string) http.Handler {
 	})
 
 	return r
+}
+
+// corsMiddleware lets a browser-based frontend served from a different
+// origin than this API call it at all — B1's frontend/backend split
+// (Vite dev server on one port, the Go binary on another, per the README's
+// own quick start) is exactly a cross-origin setup, and without this a
+// browser blocks every request with no server-side error to even see.
+// Auth here is a single static bearer token attached explicitly by the
+// calling JS, not ambient cookie authority, so a wildcard origin doesn't
+// change who can actually use the API — anyone with the token could already
+// call it directly (curl, another server) regardless of what CORS allows a
+// *browser* to read.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		if r.Method == http.MethodOptions {
+			// A CORS preflight never carries the real Authorization header,
+			// so it must be answered here, before BearerAuth ever sees it —
+			// this middleware runs on the outer router, ahead of /api's own
+			// auth-gated sub-router.
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func healthz(conn *sql.DB) http.HandlerFunc {

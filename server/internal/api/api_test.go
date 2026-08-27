@@ -289,6 +289,49 @@ func TestPostSyncDrainsABatchAndReportsPerEntry(t *testing.T) {
 	}
 }
 
+func TestCorsPreflightIsAnsweredWithoutAuth(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	router := api.NewRouter(conn, "secret")
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/today", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for a preflight with no Authorization header, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected Access-Control-Allow-Origin: *, got %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got == "" {
+		t.Fatalf("expected Access-Control-Allow-Headers to be set")
+	}
+}
+
+func TestCorsHeaderPresentOnARealResponseToo(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	router := api.NewRouter(conn, "secret")
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected Access-Control-Allow-Origin: * on a normal response too, got %q", got)
+	}
+}
+
 func TestGetExportDumpsDataAndGatesWeighInsOnTheVault(t *testing.T) {
 	conn, err := db.Open(":memory:")
 	if err != nil {
