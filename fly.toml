@@ -1,0 +1,41 @@
+# Fly.io app config (docs/architecture.md §B1's hosting choice, decided
+# alongside M10). One tiny machine, one persistent volume for the SQLite
+# file + nightly backups (server/internal/backup writes ANYWAY_BACKUP_DIR
+# there too) — see memory.md for why off-box copy beyond this volume isn't
+# built yet.
+#
+# `app` is set at `fly launch`/`fly apps create` time — see the deploy
+# guide for the exact name chosen.
+primary_region = "sin"  # Singapore — closest major Fly region to the app's real user; change if that's wrong
+
+[build]
+
+[env]
+  ANYWAY_ADDR = ":8080"
+  ANYWAY_DB_PATH = "/data/anyway.db"
+  ANYWAY_BACKUP_DIR = "/data/backups"
+  ANYWAY_BACKUP_HOUR = "3"
+  ANYWAY_BACKUP_KEEP = "30"
+  # ANYWAY_API_TOKEN is a secret (`fly secrets set`), never set here.
+
+[[mounts]]
+  source = "anyway_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"   # single-user, always-on app — no cold-start delay when opening the PWA
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

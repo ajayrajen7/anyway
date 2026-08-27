@@ -23,7 +23,13 @@ import (
 	"github.com/ajayrajen7/anyway/server/internal/today"
 )
 
-func NewRouter(conn *sql.DB, token string) http.Handler {
+// NewRouter's return type is chi.Router, not just http.Handler, so
+// cmd/server can call .NotFound() on it to mount the embedded frontend
+// (internal/webapp) as the SPA fallback for everything /api/* and /healthz
+// don't claim — kept out of this package entirely, since the JSON API
+// surface has no reason to know a frontend exists. chi.Router still
+// satisfies http.Handler, so nothing here or in tests changes.
+func NewRouter(conn *sql.DB, token string) chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)

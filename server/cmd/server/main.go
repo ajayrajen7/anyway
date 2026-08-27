@@ -11,6 +11,7 @@ import (
 	"github.com/ajayrajen7/anyway/server/internal/api"
 	"github.com/ajayrajen7/anyway/server/internal/backup"
 	"github.com/ajayrajen7/anyway/server/internal/db"
+	"github.com/ajayrajen7/anyway/server/internal/webapp"
 )
 
 func main() {
@@ -36,6 +37,12 @@ func main() {
 	go backup.RunNightly(context.Background(), conn, backupDir, backupHour, backupKeep, nil, log.Printf)
 
 	router := api.NewRouter(conn, token)
+	// SPA fallback: any path /api/* and /healthz don't claim serves the
+	// embedded frontend build (internal/webapp) — the single-binary,
+	// same-origin production deploy decided alongside M10's hosting choice.
+	// A dev setup running `npm run dev` separately never hits this at all.
+	router.NotFound(webapp.Handler().ServeHTTP)
+
 	log.Printf("listening on %s (db: %s)", addr, dbPath)
 	log.Fatal(http.ListenAndServe(addr, router))
 }
