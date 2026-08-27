@@ -165,7 +165,7 @@ Every write carries a client-generated UUID so outbox replays are idempotent.
 
 ## B6. Frontend rules Claude Code must enforce
 
-1. **No `<input type="number">` or any focusable text field inside `/session/*`.** Steppers only. This is a testable assertion — write a test for it.
+1. **No `<input type="number">` or any focusable text field inside the Session Runner set-logging screen (`/session/:id`).** Steppers only. This is a testable assertion — write a test for it. **Amendment (M5):** this rule scopes to the set-logging screen itself, matching prd.md §A3.3's own literal wording ("no keyboard is reachable from *this screen*"), not literally every route nested under `/session/*`. The Swap sheet (`/session/:id/swap/:slotId`, §A3.4) and Add-exercise (`/session/:id/add`, §A3.5) explicitly mock up a "Search…" text box each — those two screens get a real text input for tier-2/full-library search. The no-input test stays scoped to the Session Runner component only.
 2. Minimum tap target 48×48 px. Set-confirm targets 64 px tall.
 3. Dark theme by default. Gym lighting is bad and screens are read at arm's length.
 4. Rest timer is a passive display, never a modal, never blocking.

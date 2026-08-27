@@ -2,7 +2,7 @@
 // runner reads/writes here only and never awaits a network call. A background
 // sync worker (M9) drains `outbox` to the server when connectivity returns.
 import Dexie, { type Table } from 'dexie';
-import type { CachedToday, Exercise, LoggedSet, MorningCheck, OutboxEntry } from './types';
+import type { CachedToday, Exercise, LoggedSet, MorningCheck, OutboxEntry, SessionOverlay } from './types';
 
 export class AppDatabase extends Dexie {
   exercises!: Table<Exercise, number>;
@@ -10,6 +10,7 @@ export class AppDatabase extends Dexie {
   morningChecks!: Table<MorningCheck, string>;
   outbox!: Table<OutboxEntry, number>;
   todayCache!: Table<CachedToday, number>;
+  sessionOverlay!: Table<SessionOverlay, number>;
 
   constructor() {
     super('anyway');
@@ -29,6 +30,15 @@ export class AppDatabase extends Dexie {
     this.version(2).stores({
       loggedSets: '++id, client_uuid, session_id, exercise_id, logged_at, [session_id+exercise_id]',
       todayCache: 'sessionId, date',
+    });
+    // M5: the exercise library (populated from GET /api/exercises whenever
+    // Today.tsx has a connection — see src/lib/exerciseCache.ts) so the swap
+    // and add-exercise search screens can search offline, and a per-session
+    // overlay recording swaps/additions without mutating the immutable
+    // todayCache snapshot (see src/lib/overlay.ts, src/lib/types.ts#SessionOverlay).
+    this.version(3).stores({
+      exercises: 'id, slug, blocked, name',
+      sessionOverlay: 'sessionId',
     });
   }
 }

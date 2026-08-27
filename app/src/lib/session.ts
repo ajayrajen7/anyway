@@ -1,6 +1,7 @@
-// Pure helpers for the session runner (M4) — kept free of Dexie/React so
-// they're trivial to unit test. See src/lib/outbox.ts for the actual writes.
-import type { Actual, LoggedSet, TodaySlot } from './types';
+// Pure helpers for the session runner (M4/M5) — kept free of Dexie/React so
+// they're trivial to unit test. See src/lib/outbox.ts for the actual writes,
+// src/lib/overlay.ts for the swap/add-exercise Dexie layer.
+import type { Actual, ExerciseRef, LoggedSet, Provenance, SessionOverlay, TodayResponse } from './types';
 
 export interface SetValues {
   loadKg: number | null;
@@ -8,11 +9,81 @@ export interface SetValues {
 }
 
 // "Set rows pre-fill with the last logged actual for that exercise, falling
-// back to prescribed load/reps on first exposure" (prd.md §A3.3).
-export function prefillFor(slot: TodaySlot): SetValues {
-  const actual: Actual | null = slot.last_actual;
+// back to prescribed load/reps on first exposure" (prd.md §A3.3). A swapped-
+// in exercise (M5) has no offline last-actual data to draw on, so it always
+// falls back to the slot's originally prescribed sets/reps.
+export function prefillFor(slot: Pick<RunnerSlot, 'loadKg' | 'reps' | 'lastActual'>): SetValues {
+  const actual: Actual | null = slot.lastActual;
   if (actual) return { loadKg: actual.load_kg, reps: actual.reps };
-  return { loadKg: slot.load_kg, reps: slot.reps };
+  return { loadKg: slot.loadKg, reps: slot.reps };
+}
+
+// The unified, ordered list of exercises to run *this* session — the
+// original prescription (todayCache, immutable) with any swaps applied in
+// place and any added exercises interleaved (M5). Everything downstream
+// (SessionRunner, ExercisePanel) works off this, never off TodaySlot/
+// SessionOverlay directly.
+export interface RunnerSlot {
+  key: string; // stable React key — `slot-<slots.id>` or `added-<uuid>`
+  slotId: number | null; // real slots.id for logged_sets.slot_id — null when added
+  exercise: ExerciseRef;
+  sets: number;
+  reps: number;
+  loadKg: number | null;
+  note: string | null;
+  swaps: ExerciseRef[]; // tier-1 options — always from the *original* slot, empty for an added exercise
+  lastActual: Actual | null;
+  provenance: Provenance;
+  addedBy: 'trainer' | 'me' | null;
+}
+
+export function buildRunnerSlots(data: TodayResponse, overlay: SessionOverlay): RunnerSlot[] {
+  const prescribed: RunnerSlot[] = data.slots.map((slot) => {
+    const swap = overlay.swaps[String(slot.id)];
+    return {
+      key: `slot-${slot.id}`,
+      slotId: slot.id,
+      exercise: swap ? swap.exercise : slot.exercise,
+      sets: slot.sets,
+      reps: slot.reps,
+      loadKg: slot.load_kg,
+      note: slot.note,
+      swaps: slot.swaps,
+      lastActual: swap ? null : slot.last_actual,
+      provenance: swap ? swap.provenance : 'prescribed',
+      addedBy: null,
+    };
+  });
+
+  // Insert each added exercise right after its target key, in the order
+  // they were added. `after_key` always refers to something that already
+  // existed at add-time — an original prescribed slot, or an *earlier*
+  // added exercise — so processing overlay.added in push order and
+  // searching the list built so far always finds it (handles chains of
+  // several exercises added back-to-back correctly, not just one).
+  const result = [...prescribed];
+  for (const a of overlay.added) {
+    const runnerSlot: RunnerSlot = {
+      key: `added-${a.id}`,
+      slotId: null,
+      exercise: a.exercise,
+      sets: a.sets,
+      reps: a.reps,
+      loadKg: a.load_kg,
+      note: null,
+      swaps: [],
+      lastActual: null,
+      provenance: 'added',
+      addedBy: a.added_by,
+    };
+    const afterIndex = a.after_key === null ? -1 : result.findIndex((s) => s.key === a.after_key);
+    if (afterIndex === -1) {
+      result.push(runnerSlot); // null after_key, or a stale/unmatched one — append at the end
+    } else {
+      result.splice(afterIndex + 1, 0, runnerSlot);
+    }
+  }
+  return result;
 }
 
 // Neither a weight nor a rep count can go negative via the stepper.

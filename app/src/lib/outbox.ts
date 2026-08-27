@@ -24,6 +24,7 @@ export interface LogSetInput {
   reps: number | null; // null for a skipped set — nothing was actually performed
   status: 'done' | 'skipped';
   provenance?: Provenance;
+  addedBy?: 'trainer' | 'me' | null; // set only when provenance is 'added' (§A3.5)
 }
 
 // Logs one set (✓ tap, or a swipe-left skip on a single row). Writes to
@@ -40,7 +41,7 @@ export async function logSet(input: LogSetInput): Promise<LoggedSet> {
     reps: input.reps,
     status: input.status,
     provenance: input.provenance ?? 'prescribed',
-    added_by: null,
+    added_by: input.addedBy ?? null,
     logged_at: new Date().toISOString(),
   };
   await db.transaction('rw', db.loggedSets, db.outbox, async () => {

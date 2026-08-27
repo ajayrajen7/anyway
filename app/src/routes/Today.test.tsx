@@ -11,6 +11,8 @@ vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
   return { ...actual, getToday: getTodayMock };
 });
+// cacheExerciseLibrary would otherwise attempt a real fetch — stub it out.
+vi.mock('../lib/exerciseCache', () => ({ cacheExerciseLibrary: vi.fn().mockResolvedValue(undefined) }));
 
 function renderToday() {
   return render(

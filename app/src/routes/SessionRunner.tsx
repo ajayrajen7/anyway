@@ -1,21 +1,26 @@
 // A3.3 Session Runner (`/session/:id`) — the core screen. One exercise at a
 // time.
 //
-// HARD RULE (B6.1): no <input type="number"> or any focusable text field
-// anywhere in this subtree. Steppers only — enforced by a test in
-// SessionRunner.test.tsx. There is in fact no <input> element at all below:
-// every value is a <span> toggled into a −/+ stepper of <button>s.
+// HARD RULE (B6.1, amended M5): no <input type="number"> or any focusable
+// text field anywhere in *this* screen (the set-logging exercise panel).
+// Steppers only — enforced by a test in SessionRunner.test.tsx. There is in
+// fact no <input> element at all below: every value is a <span> toggled
+// into a −/+ stepper of <button>s. The nested Swap/Add sheets (rendered via
+// <Outlet/>) are a documented exception with their own search inputs — see
+// docs/architecture.md §B6.1's amendment.
 //
 // Offline-first (B2): this screen reads exclusively from the Dexie cache
-// written by Today.tsx (getCachedToday) and from already-logged sets
-// (loggedSetsFor) — it never calls the API. Every mutation goes through
-// logSet, which writes loggedSets + outbox together.
+// written by Today.tsx (getCachedToday) plus the per-session overlay
+// (swaps/additions, M5) and already-logged sets — it never calls the API.
+// Every mutation goes through logSet, which writes loggedSets + outbox
+// together.
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { getCachedToday } from '../lib/todayCache';
+import { getOverlay } from '../lib/overlay';
 import { loggedSetsFor, logSet } from '../lib/outbox';
-import { clampNonNegative, isSwipeLeft, prefillFor } from '../lib/session';
-import type { CachedToday, LoggedSet, TodaySlot } from '../lib/types';
+import { buildRunnerSlots, clampNonNegative, isSwipeLeft, prefillFor, type RunnerSlot } from '../lib/session';
+import type { CachedToday, LoggedSet, SessionOverlay } from '../lib/types';
 
 type RowStatus = 'pending' | 'done' | 'skipped';
 interface RowState {
@@ -25,7 +30,16 @@ interface RowState {
   editing: 'weight' | 'reps' | null;
 }
 
-function rowFromExisting(existing: LoggedSet | undefined, slot: TodaySlot): RowState {
+// What the nested Swap/Add sheets read via useOutletContext — everything
+// they need to act, without re-fetching what SessionRunner already has.
+export interface RunnerOutletContext {
+  sessionId: number;
+  data: CachedToday['data'];
+  currentSlot: RunnerSlot | undefined; // the exercise being viewed when the sheet was opened
+  onOverlayChange: () => void; // call after writing to sessionOverlay, before navigating back
+}
+
+function rowFromExisting(existing: LoggedSet | undefined, slot: RunnerSlot): RowState {
   if (existing) {
     return { status: existing.status, loadKg: existing.load_kg, reps: existing.reps ?? 0, editing: null };
   }
@@ -39,6 +53,7 @@ export default function SessionRunner() {
   const navigate = useNavigate();
 
   const [cached, setCached] = useState<CachedToday | null | undefined>(undefined); // undefined = loading
+  const [overlay, setOverlay] = useState<SessionOverlay | undefined>(undefined);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
@@ -51,7 +66,12 @@ export default function SessionRunner() {
     };
   }, [sessionId]);
 
-  const slots = cached?.data.slots ?? [];
+  function refreshOverlay() {
+    getOverlay(sessionId).then(setOverlay);
+  }
+  useEffect(refreshOverlay, [sessionId]);
+
+  const slots = cached && overlay ? buildRunnerSlots(cached.data, overlay) : [];
   const slot = slots[currentIndex];
   const isLastExercise = currentIndex >= slots.length - 1;
 
@@ -63,7 +83,7 @@ export default function SessionRunner() {
     }
   }
 
-  if (cached === undefined) {
+  if (cached === undefined || overlay === undefined) {
     return (
       <main className="mx-auto max-w-md p-4">
         <p className="text-sm text-slate-400">Loading…</p>
@@ -86,21 +106,24 @@ export default function SessionRunner() {
         <p className="text-sm text-slate-400">
           Exercise {currentIndex + 1} of {slots.length}
         </p>
-        <Link to={`/session/${sessionId}/add`} aria-label="More options" className="px-2 text-xl">
+        <Link to="add" aria-label="Add exercise" className="px-2 text-xl">
           ⋯
         </Link>
       </div>
 
-      {/* Keyed by slot.id: switching exercises mounts a fresh panel with its
-          own rows/rest-timer state, rather than an effect resetting state in
-          place — the state a new exercise starts with is exactly its
-          reconstructed-from-Dexie initial state, nothing to "reset". */}
-      <ExercisePanel key={slot.id} sessionId={sessionId} slot={slot} onAdvance={advance} />
+      {/* Keyed by slot.key: switching exercises (or swapping the current
+          one) mounts a fresh panel with its own rows/rest-timer state,
+          rather than an effect resetting state in place — the state a
+          "new" exercise starts with is exactly its reconstructed-from-Dexie
+          initial state, nothing to "reset". */}
+      <ExercisePanel key={slot.key} sessionId={sessionId} slot={slot} onAdvance={advance} />
+
+      <Outlet context={{ sessionId, data: cached.data, currentSlot: slot, onOverlayChange: refreshOverlay } satisfies RunnerOutletContext} />
     </main>
   );
 }
 
-function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot: TodaySlot; onAdvance: () => void }) {
+function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot: RunnerSlot; onAdvance: () => void }) {
   const [rows, setRows] = useState<RowState[]>([]);
   const [rowsReady, setRowsReady] = useState(false);
   const [restSince, setRestSince] = useState<string | null>(null);
@@ -131,12 +154,14 @@ function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot
       : { loadKg: null, reps: null };
     await logSet({
       sessionId,
-      slotId: slot.id,
+      slotId: slot.slotId,
       exerciseId: slot.exercise.id,
       setIndex: rowIndex + 1,
       loadKg: logged.loadKg,
       reps: logged.reps,
       status,
+      provenance: slot.provenance,
+      addedBy: slot.addedBy,
     });
     setRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, status, editing: null } : r)));
     if (status === 'done') setRestSince(new Date().toISOString());
@@ -157,12 +182,15 @@ function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot
     <>
       <h1 className="mt-2 text-xl font-semibold uppercase">{slot.exercise.name}</h1>
       <p className="text-sm text-slate-400">
-        Prescribed: {slot.sets} × {slot.reps} {slot.load_kg != null ? `@ ${slot.load_kg} kg` : ''}
+        Prescribed: {slot.sets} × {slot.reps} {slot.loadKg != null ? `@ ${slot.loadKg} kg` : ''}
       </p>
-      {slot.last_actual && (
+      {slot.lastActual && (
         <p className="text-sm text-slate-400">
-          Last time: {slot.sets} × {slot.last_actual.reps} {slot.last_actual.load_kg != null ? `@ ${slot.last_actual.load_kg} kg` : ''}
+          Last time: {slot.sets} × {slot.lastActual.reps} {slot.lastActual.load_kg != null ? `@ ${slot.lastActual.load_kg} kg` : ''}
         </p>
+      )}
+      {slot.provenance === 'added' && (
+        <p className="text-xs text-amber-500">Added — {slot.addedBy === 'trainer' ? "trainer's call" : 'my call'}</p>
       )}
       {slot.note && <p className="mt-1 text-xs text-slate-500">{slot.note}</p>}
 
@@ -187,12 +215,13 @@ function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot
       </div>
 
       <div className="mt-6 flex justify-between gap-2">
-        <Link
-          to={`/session/${sessionId}/swap/${slot.id}`}
-          className="flex-1 rounded-md bg-slate-800 py-3 text-center"
-        >
-          Swap
-        </Link>
+        {slot.slotId != null ? (
+          <Link to={`swap/${slot.slotId}`} className="flex-1 rounded-md bg-slate-800 py-3 text-center">
+            Swap
+          </Link>
+        ) : (
+          <span className="flex-1" /> // an added exercise has no slot to swap
+        )}
         <button type="button" onClick={skipExercise} disabled={!rowsReady} className="flex-1 rounded-md bg-slate-800 py-3 disabled:opacity-50">
           Skip
         </button>

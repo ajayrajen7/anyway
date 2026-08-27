@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, getToday } from '../lib/api';
 import { localDateKey } from '../lib/date';
+import { cacheExerciseLibrary } from '../lib/exerciseCache';
 import { cacheToday } from '../lib/todayCache';
 import type { TodayResponse } from '../lib/types';
 
@@ -31,6 +32,12 @@ export default function Today() {
     getToday(localDateKey())
       .then(async (data) => {
         await cacheToday(data); // so the session runner can run with no signal
+        // Best-effort, non-blocking: refresh the offline exercise-search
+        // cache for the Swap/Add screens. A failure here shouldn't block
+        // Today from rendering — it just means that cache stays stale.
+        cacheExerciseLibrary().catch((err: unknown) => {
+          console.error('failed to refresh offline exercise cache', err);
+        });
         if (!cancelled) setState({ status: 'ready', data });
       })
       .catch((err: unknown) => {

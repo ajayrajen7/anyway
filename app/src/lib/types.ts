@@ -28,7 +28,10 @@ export const Exercise = z.object({
   blocked: z.boolean(),
   block_reason: z.string().nullable(),
   caution: z.string().nullable(),
-  muscles: z.record(z.enum(MUSCLE_GROUPS), z.number()),
+  // partialRecord, not record: a real exercise only ever specifies a
+  // handful of the 17 muscle groups (§A5.2) — z.record(enum, ...) infers a
+  // TS type requiring *every* key present, which no real exercise satisfies.
+  muscles: z.partialRecord(z.enum(MUSCLE_GROUPS), z.number()),
 });
 export type Exercise = z.infer<typeof Exercise>;
 
@@ -56,7 +59,7 @@ export type MorningCheck = z.infer<typeof MorningCheck>;
 
 // --- GET /api/today (docs/architecture.md §B5, M3) ---
 
-const ExerciseRef = z.object({
+export const ExerciseRef = z.object({
   id: z.number(),
   slug: z.string(),
   name: z.string(),
@@ -116,6 +119,41 @@ export const CachedToday = z.object({
   data: TodayResponse,
 });
 export type CachedToday = z.infer<typeof CachedToday>;
+
+// A locally-added, ad-hoc exercise (prd.md §A3.5) — no `slots` row exists for
+// it server-side (logged_sets.slot_id stays null for these), so its
+// prescription is invented client-side: 3×10, no load, adjustable via the
+// normal steppers like anything else.
+export const AddedSlot = z.object({
+  id: z.string(), // locally generated (crypto.randomUUID()) — never a real slots.id
+  exercise: ExerciseRef,
+  sets: z.number(),
+  reps: z.number(),
+  load_kg: z.number().nullable(),
+  added_by: z.enum(['trainer', 'me']),
+  after_key: z.string().nullable(), // RunnerSlot.key to insert after; null = append at the end
+});
+export type AddedSlot = z.infer<typeof AddedSlot>;
+
+// A swap applied to a prescribed slot (prd.md §A3.4) — overrides which
+// exercise that slot logs against, without touching the immutable
+// `todayCache` snapshot of what the server originally prescribed.
+export const SwapOverride = z.object({
+  exercise: ExerciseRef,
+  provenance: z.enum(['swap_in_list', 'swap_off_list']),
+});
+export type SwapOverride = z.infer<typeof SwapOverride>;
+
+// Local, session-scoped record of everything that changed from the original
+// prescription — swaps and additions. `todayCache.data` + `SessionOverlay`
+// together are "what this session actually is"; see
+// src/lib/session.ts#buildRunnerSlots.
+export const SessionOverlay = z.object({
+  sessionId: z.number(),
+  swaps: z.record(z.string(), SwapOverride), // keyed by TodaySlot.id.toString()
+  added: z.array(AddedSlot),
+});
+export type SessionOverlay = z.infer<typeof SessionOverlay>;
 
 export const OutboxEntry = z.object({
   id: z.number().optional(),

@@ -1,6 +1,6 @@
 // Thin fetch wrapper for the Go API (docs/architecture.md §B5). Auth is a
 // single static bearer token (B1) — no session/cookie plumbing, one user.
-import { TodayResponse } from './types';
+import { Exercise, TodayResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? '';
@@ -36,4 +36,14 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 export async function getToday(date: string): Promise<TodayResponse> {
   const raw = await apiFetch<unknown>(`/api/today?date=${encodeURIComponent(date)}`);
   return TodayResponse.parse(raw);
+}
+
+// GET /api/exercises?include_blocked=1 — the *whole* library, blocked
+// exercises included. This is only ever called while online (from
+// src/lib/exerciseCache.ts, triggered by Today.tsx) to refresh the offline
+// search cache used by the Swap/Add screens — never called directly from
+// those screens themselves, which must stay network-free (§B2).
+export async function getExerciseLibrary(): Promise<Exercise[]> {
+  const raw = await apiFetch<unknown>('/api/exercises?include_blocked=1');
+  return Exercise.array().parse(raw);
 }
