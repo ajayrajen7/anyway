@@ -4,9 +4,10 @@
 # there too) — see memory.md for why off-box copy beyond this volume isn't
 # built yet.
 #
-# `app` is set at `fly launch`/`fly apps create` time — see the deploy
-# guide for the exact name chosen.
-primary_region = "sin"  # Singapore — closest major Fly region to the app's real user; change if that's wrong
+# `app` and the region are NOT set here — .github/workflows/deploy.yml
+# passes both explicitly (`--app`, `--region`) from repository variables, so
+# there's exactly one place (the repo's Settings > Variables) that names
+# them, not two that could drift out of sync with each other.
 
 [build]
 

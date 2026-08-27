@@ -22,18 +22,20 @@ The server also runs a nightly `VACUUM INTO` backup (docs/architecture.md §B2) 
 
 ## Deploying
 
-Hosting is Fly.io, one binary embedding the built frontend (no separate frontend host, no CORS needed in production — decided alongside M10, see `memory.md`).
+Hosting is Fly.io, one binary embedding the built frontend (no separate frontend host, no CORS needed in production — decided alongside M10, see `memory.md`). Deploys run in **GitHub Actions** (`.github/workflows/deploy.yml`), not from a local machine — Fly's API isn't reachable from every environment this project gets built in, and CI-driven deploys are more repeatable anyway.
 
+**One-time setup**, in this repo's Settings → Secrets and variables → Actions:
+- Secrets: `FLY_API_TOKEN` (a Fly.io deploy token, fly.io/user/personal_access_tokens) and `ANYWAY_API_TOKEN` (any random string you generate — the app's own single static bearer token, §B1; baked into the frontend build *and* set as the server's runtime secret, so both must come from this one value)
+- Variables: `FLY_APP_NAME` (must be globally unique across all of Fly) and `FLY_REGION` (a Fly region code, e.g. `sin`, `bom`, `nrt`) — optionally `FLY_ORG` if your account has more than one org
+
+Then push to `main`, or trigger the workflow manually from the Actions tab. The workflow creates the app, the persistent volume, and the runtime secret on first run (idempotently — safe to re-run), then deploys.
+
+To sanity-check the exact artifact locally without Docker or Fly:
 ```sh
-# One-off local sanity check of the exact artifact Fly builds:
 ANYWAY_API_TOKEN=<token> ./scripts/build-embedded.sh
 ./server/anyway-server   # serves both the PWA and the API on ANYWAY_ADDR
-
-# Real deploy (after `fly launch`/`fly apps create` and `fly volumes create anyway_data -r <region> -s 1`):
-fly deploy --build-arg ANYWAY_API_TOKEN=<token>
-fly secrets set ANYWAY_API_TOKEN=<same token>
 ```
 
-`ANYWAY_API_TOKEN` must be identical at build time (baked into the frontend bundle) and at runtime (the server's own secret) — see `docs/architecture.md` §B1: this is a single static bearer token by design (one user, not real auth), so it's visible in the deployed page's JS source to anyone who finds the URL. That's an accepted limitation of the original spec, not something deployment introduces — see `memory.md`.
+`ANYWAY_API_TOKEN` is visible in the deployed page's JS source to anyone who finds the URL — an accepted limitation of the original spec's auth model (one user, not real auth), not something deployment introduces. See `memory.md`.
 
 See `CLAUDE.md` for the full operating contract and `docs/implementation-plan.md` for build order and commands.

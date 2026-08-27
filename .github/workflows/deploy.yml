@@ -1,0 +1,81 @@
+# Deploys to Fly.io (docs/architecture.md §B1, see memory.md for the
+# hosting decision). Runs on GitHub's own runners deliberately — Fly's API
+# isn't reachable from the Claude Code session that built this, so the
+# actual deploy has to happen somewhere with normal internet access. This
+# also happens to be better practice than an ad-hoc `fly deploy` from a
+# human's laptop: repeatable, logged, and triggered by the same push that
+# passes CI.
+#
+# One-time setup before the first run (see README.md "Deploying"):
+#   Repo secrets  (Settings → Secrets and variables → Actions → Secrets):
+#     FLY_API_TOKEN     — a Fly.io deploy token (fly.io/user/personal_access_tokens)
+#     ANYWAY_API_TOKEN  — the app's own single static bearer token (any
+#                         random string you generate — this is architecture.md
+#                         §B1's "one user, do not build auth" token, baked into
+#                         the frontend build AND set as the server's runtime secret)
+#   Repo variables (same page → Variables):
+#     FLY_APP_NAME — must be globally unique across all of Fly
+#     FLY_REGION   — a Fly region code, e.g. sin, bom, nrt
+#     FLY_ORG      — optional; omit to let flyctl pick your only/default org
+name: Deploy to Fly.io
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      APP_NAME: ${{ vars.FLY_APP_NAME }}
+      REGION: ${{ vars.FLY_REGION }}
+      FLY_ORG: ${{ vars.FLY_ORG }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Ensure the app exists
+        run: |
+          if [ -z "$APP_NAME" ]; then
+            echo "::error::Set the FLY_APP_NAME repository variable first (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          fi
+          if flyctl apps list | grep -qw "$APP_NAME"; then
+            echo "app $APP_NAME already exists"
+          elif [ -n "$FLY_ORG" ]; then
+            flyctl apps create "$APP_NAME" --org "$FLY_ORG"
+          else
+            flyctl apps create "$APP_NAME"
+          fi
+
+      - name: Ensure the data volume exists
+        run: |
+          if flyctl volumes list --app "$APP_NAME" | grep -qw anyway_data; then
+            echo "volume anyway_data already exists"
+          else
+            if [ -z "$REGION" ]; then
+              echo "::error::Set the FLY_REGION repository variable first (e.g. sin, bom, nrt)."
+              exit 1
+            fi
+            flyctl volumes create anyway_data --app "$APP_NAME" --region "$REGION" --size 1 --yes
+          fi
+
+      - name: Ensure the app's own bearer-token secret is set
+        run: |
+          if flyctl secrets list --app "$APP_NAME" | grep -qw ANYWAY_API_TOKEN; then
+            echo "ANYWAY_API_TOKEN already set on $APP_NAME"
+          else
+            flyctl secrets set ANYWAY_API_TOKEN="${{ secrets.ANYWAY_API_TOKEN }}" --app "$APP_NAME" --stage
+          fi
+
+      - name: Deploy
+        run: |
+          flyctl deploy --app "$APP_NAME" --region "$REGION" --remote-only \
+            --build-arg ANYWAY_API_TOKEN="${{ secrets.ANYWAY_API_TOKEN }}"
