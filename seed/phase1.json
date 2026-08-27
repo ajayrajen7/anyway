@@ -1,0 +1,110 @@
+{
+  "phase": { "name": "Phase 1 — Tolerance and Tissue Prep", "start_week": 1, "end_week": 6 },
+  "day_templates": [
+    {
+      "weekday": 1,
+      "name": "Lower A",
+      "kind": "lifting",
+      "slots": [
+        { "position": 1, "exercise_slug": "leg-press", "sets": 3, "reps": 12, "load_kg": null,
+          "note": "3×12–15, moderate load, no lockout, feet mid-platform. Highest groin-pressure exercise in the programme — stop 3 reps short of failure, always.",
+          "swaps": ["leg-press-sl", "goblet-squat-heel-elev", "spanish-squat"] },
+        { "position": 2, "exercise_slug": "goblet-squat", "sets": 3, "reps": 12, "load_kg": 25,
+          "note": "Down from 30 kg — start conservative.",
+          "swaps": ["landmine-squat", "cyclist-squat", "goblet-squat-heel-elev"] },
+        { "position": 3, "exercise_slug": "rfe-split-squat", "sets": 3, "reps": 10, "load_kg": 8,
+          "note": "Low elevation (15 cm); bodyweight or 8 kg per hand.",
+          "swaps": ["split-squat", "step-up", "reverse-lunge"] },
+        { "position": 4, "exercise_slug": "sliding-leg-curl", "sets": 3, "reps": 12, "load_kg": null,
+          "note": "Towel on floor, or band leg curl. Hamstring exposure one — the second comes Thursday.",
+          "swaps": ["band-leg-curl", "nordic-curl-ecc"] },
+        { "position": 5, "exercise_slug": "calf-raise-seated", "sets": 3, "reps": 15, "load_kg": null,
+          "note": "Dumbbell on knee, knee bent 90°, 3s up / 3s down. Achilles rehab (soleus) — some tendon discomfort up to 4/10 is expected and acceptable.",
+          "swaps": ["calf-raise-seated-sl", "calf-raise-toes-elev"] },
+        { "position": 6, "exercise_slug": "calf-raise-standing", "sets": 3, "reps": 12, "load_kg": null,
+          "note": "Straight knee, 3s up / 3s down. Achilles rehab (gastrocnemius).",
+          "swaps": ["calf-raise-standing-sl", "calf-raise-toes-elev"] }
+      ]
+    },
+    {
+      "weekday": 2,
+      "name": "Upper A — Push",
+      "kind": "lifting",
+      "slots": [
+        { "position": 1, "exercise_slug": "db-bench", "sets": 3, "reps": 10, "load_kg": 20, "note": null,
+          "swaps": ["db-incline-press", "db-floor-press", "push-up-feet-elev"] },
+        { "position": 2, "exercise_slug": "db-row-one-arm", "sets": 3, "reps": 12, "load_kg": null,
+          "note": "Bench-supported deliberately — no standing hinge, no bracing.",
+          "swaps": ["db-row-chest-supported", "band-row-seated", "inverted-row"] },
+        { "position": 3, "exercise_slug": "landmine-press-kneel", "sets": 3, "reps": 10, "load_kg": null,
+          "note": "Light. Half-kneeling deliberately: removes the standing brace, forces pressing without trunk pressure.",
+          "swaps": ["db-shoulder-press-seated", "db-arnold-press"] },
+        { "position": 4, "exercise_slug": "band-lat-pulldown", "sets": 3, "reps": 12, "load_kg": null,
+          "note": "Anchored overhead, half-kneeling.",
+          "swaps": ["db-pullover", "inverted-row"] },
+        { "position": 5, "exercise_slug": "db-lateral-raise", "sets": 2, "reps": 15, "load_kg": null,
+          "note": "Light. Shoulder health, not width.",
+          "swaps": [] },
+        { "position": 6, "exercise_slug": "pallof-press", "sets": 3, "reps": 10, "load_kg": null,
+          "note": "Breathing continuously throughout the hold.",
+          "swaps": ["dead-bug", "bird-dog"] }
+      ]
+    },
+    { "weekday": 3, "name": "Mobility + Zone 2", "kind": "cardio_mobility", "slots": [] },
+    {
+      "weekday": 4,
+      "name": "Lower B",
+      "kind": "lifting",
+      "slots": [
+        { "position": 1, "exercise_slug": "hip-thrust", "sets": 3, "reps": 12, "load_kg": null,
+          "note": "Shoulders on bench. Start bodyweight — if a dumbbell across the hips creates lower-abdominal pressure, switch permanently to single-leg bodyweight hip thrusts.",
+          "swaps": ["hip-thrust-sl", "glute-bridge", "back-extension-45"] },
+        { "position": 2, "exercise_slug": "reverse-lunge", "sets": 3, "reps": 10, "load_kg": null,
+          "note": "Bodyweight to 8 kg per hand. Reverse rather than forward — less braking force through the right knee.",
+          "swaps": [] },
+        { "position": 3, "exercise_slug": "sl-rdl", "sets": 3, "reps": 8, "load_kg": 8,
+          "note": "Stays permanently light — buying the hamstring stretch, not the load. Cut if any groin sensation.",
+          "swaps": ["back-extension-45", "good-morning-seated"] },
+        { "position": 4, "exercise_slug": "step-up", "sets": 2, "reps": 10, "load_kg": null,
+          "note": "20–25 cm box, 3-second lowering. Quad exposure two.",
+          "swaps": ["lateral-step-up", "reverse-lunge", "split-squat"] },
+        { "position": 5, "exercise_slug": "calf-raise-seated", "sets": 3, "reps": 15, "load_kg": null,
+          "note": "Slow tempo.",
+          "swaps": ["calf-raise-seated-sl", "calf-raise-toes-elev"] },
+        { "position": 6, "exercise_slug": "tibialis-raise", "sets": 3, "reps": 20, "load_kg": null,
+          "note": "Heels on floor, toes up, back against wall. Under-trained, directly relevant to flat foot and Achilles.",
+          "swaps": [] },
+        { "position": 7, "exercise_slug": "side-plank", "sets": 3, "reps": 30, "load_kg": null,
+          "note": "30s hold per side — reps field is SECONDS for this slot, not rep count (see memory.md M2 note). Not a rep-based exercise.",
+          "swaps": [] }
+      ]
+    },
+    {
+      "weekday": 5,
+      "name": "Upper B — Pull",
+      "kind": "lifting",
+      "slots": [
+        { "position": 1, "exercise_slug": "db-row-chest-supported", "sets": 3, "reps": 12, "load_kg": null,
+          "note": "Incline bench, face down.",
+          "swaps": ["db-row-one-arm", "band-row-seated"] },
+        { "position": 2, "exercise_slug": "db-incline-press", "sets": 3, "reps": 12, "load_kg": null,
+          "note": "Chest exposure two.",
+          "swaps": ["db-bench", "push-up-feet-elev", "db-fly-incline"] },
+        { "position": 3, "exercise_slug": "db-pullover", "sets": 3, "reps": 12, "load_kg": null, "note": null,
+          "swaps": ["band-lat-pulldown"] },
+        { "position": 4, "exercise_slug": "push-up", "sets": 2, "reps": 12, "load_kg": null,
+          "note": "AMRAP-style, stop 2 reps short of failure — the programme gives no fixed rep target for this slot; 12 is a placeholder starting point, not a prescribed number (see memory.md M2 note). Chest exposure three, low load.",
+          "swaps": ["push-up-feet-elev", "band-chest-press"] },
+        { "position": 5, "exercise_slug": "band-face-pull", "sets": 3, "reps": 15, "load_kg": null, "note": null,
+          "swaps": ["db-rear-delt-fly", "band-pull-apart"] },
+        { "position": 6, "exercise_slug": "db-curl", "sets": 3, "reps": 12, "load_kg": null, "note": null,
+          "swaps": ["db-hammer-curl", "db-incline-curl"] },
+        { "position": 7, "exercise_slug": "dead-bug", "sets": 3, "reps": 8, "load_kg": null,
+          "note": "Exhaling fully on each extension.",
+          "swaps": [] }
+      ]
+    },
+    { "weekday": 6, "name": "Mobility + Incline Walk", "kind": "cardio_mobility", "slots": [] },
+    { "weekday": 7, "name": "Off", "kind": "rest", "slots": [] }
+  ]
+}
