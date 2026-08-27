@@ -7,12 +7,15 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/ajayrajen7/anyway/server/internal/seed"
+	"github.com/ajayrajen7/anyway/server/internal/today"
 )
 
 func NewRouter(conn *sql.DB, token string) http.Handler {
@@ -24,7 +27,7 @@ func NewRouter(conn *sql.DB, token string) http.Handler {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(BearerAuth(token))
-		r.Get("/today", notImplemented)
+		r.Get("/today", getToday(conn))
 		r.Post("/sessions/{id}/sets", notImplemented)
 		r.Post("/sessions/{id}/sets/{sid}/skip", notImplemented)
 		r.Post("/sessions/{id}/add", notImplemented)
@@ -73,6 +76,35 @@ func listExercises(conn *sql.DB) http.HandlerFunc {
 			exercises = []seed.Exercise{} // never null in the response
 		}
 		json.NewEncoder(w).Encode(exercises)
+	}
+}
+
+// getToday implements GET /api/today?date=YYYY-MM-DD (docs/architecture.md
+// §B5; M3). `date` is the client's *local* calendar day — the server has no
+// reliable way to know the user's timezone otherwise — and defaults to the
+// server's own local date only as a convenience for manual/curl testing.
+// This `date` param is an addition to §B5's prose, logged in memory.md.
+func getToday(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		date := r.URL.Query().Get("date")
+		if date == "" {
+			date = time.Now().Format("2006-01-02")
+		}
+
+		resp, err := today.Get(r.Context(), conn, date)
+		if err != nil {
+			switch {
+			case errors.Is(err, today.ErrInvalidDate):
+				w.WriteHeader(http.StatusBadRequest)
+			case errors.Is(err, today.ErrNoActivePhase), errors.Is(err, today.ErrNoDayTemplate):
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(resp)
 	}
 }
 

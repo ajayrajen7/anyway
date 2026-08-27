@@ -143,7 +143,7 @@ Prescribed coverage is the same shape over `slots × day_templates` for the acti
 ## B5. API
 
 ```
-GET  /api/today                     → session + slots + swaps + last-actuals
+GET  /api/today?date=YYYY-MM-DD      → session + slots + swaps + last-actuals
 POST /api/sessions/:id/sets         → log a set
 POST /api/sessions/:id/sets/:sid/skip
 POST /api/sessions/:id/add          → { exercise_id, added_by }
@@ -160,6 +160,8 @@ GET  /api/export                    → full JSON dump
 ```
 
 Every write carries a client-generated UUID so outbox replays are idempotent.
+
+**Amendment (M3):** `GET /api/today` takes an explicit `date` query param — the client's *local* calendar day (`YYYY-MM-DD`), not the server's. The server cannot otherwise know the user's timezone, and "which day is today" must be the same day the user is actually living, not wherever the box happens to be hosted. Falls back to the server's own local date only if omitted (a convenience for manual/curl testing, not something the frontend should rely on).
 
 ## B6. Frontend rules Claude Code must enforce
 

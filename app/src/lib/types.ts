@@ -54,6 +54,57 @@ export const MorningCheck = z.object({
 });
 export type MorningCheck = z.infer<typeof MorningCheck>;
 
+// --- GET /api/today (docs/architecture.md §B5, M3) ---
+
+const ExerciseRef = z.object({
+  id: z.number(),
+  slug: z.string(),
+  name: z.string(),
+  unilateral: z.boolean(),
+  increment_kg: z.number(),
+});
+export type ExerciseRef = z.infer<typeof ExerciseRef>;
+
+const Actual = z.object({
+  load_kg: z.number().nullable(),
+  reps: z.number(),
+});
+export type Actual = z.infer<typeof Actual>;
+
+const TodaySlot = z.object({
+  position: z.number(),
+  exercise: ExerciseRef,
+  sets: z.number(),
+  reps: z.number(),
+  load_kg: z.number().nullable(),
+  note: z.string().nullable(),
+  swaps: z.array(ExerciseRef),
+  last_actual: Actual.nullable(),
+});
+export type TodaySlot = z.infer<typeof TodaySlot>;
+
+const TodaySession = z.object({
+  id: z.number(),
+  status: z.enum(['planned', 'completed', 'missed']),
+  started_at: z.string().nullable(),
+  ended_at: z.string().nullable(),
+  note: z.string().nullable(),
+});
+export type TodaySession = z.infer<typeof TodaySession>;
+
+export const TodayResponse = z.object({
+  date: z.string(),
+  weekday: z.number().min(1).max(7),
+  day_template: z.object({
+    id: z.number(),
+    name: z.string(),
+    kind: z.enum(['lifting', 'cardio_mobility', 'rest']),
+  }),
+  session: TodaySession.nullable(),
+  slots: z.array(TodaySlot),
+});
+export type TodayResponse = z.infer<typeof TodayResponse>;
+
 export const OutboxEntry = z.object({
   id: z.number().optional(),
   entity: z.string(),

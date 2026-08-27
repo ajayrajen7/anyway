@@ -1,5 +1,7 @@
 // Thin fetch wrapper for the Go API (docs/architecture.md §B5). Auth is a
 // single static bearer token (B1) — no session/cookie plumbing, one user.
+import { TodayResponse } from './types';
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? '';
 
@@ -26,4 +28,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+// GET /api/today?date=YYYY-MM-DD — `date` must be the caller's *local*
+// calendar day (src/lib/date.ts#localDateKey), never the server's. Validated
+// with Zod at the boundary per the carried-over discipline.
+export async function getToday(date: string): Promise<TodayResponse> {
+  const raw = await apiFetch<unknown>(`/api/today?date=${encodeURIComponent(date)}`);
+  return TodayResponse.parse(raw);
 }

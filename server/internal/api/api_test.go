@@ -28,6 +28,9 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+// /api/week is still a 501 stub (M8) — used here purely to check the
+// bearer-auth gate, independent of whatever any individual route actually
+// does once implemented.
 func TestApiRoutesRequireBearerToken(t *testing.T) {
 	conn, err := db.Open(":memory:")
 	if err != nil {
@@ -37,14 +40,14 @@ func TestApiRoutesRequireBearerToken(t *testing.T) {
 
 	router := api.NewRouter(conn, "secret")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/today", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/week", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 with no token, got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/today", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/week", nil)
 	req.Header.Set("Authorization", "Bearer wrong")
 	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -52,7 +55,7 @@ func TestApiRoutesRequireBearerToken(t *testing.T) {
 		t.Fatalf("expected 401 with wrong token, got %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/today", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/week", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -105,5 +108,31 @@ func TestListExercisesExcludesBlockedByDefaultButFindsThemOnSearch(t *testing.T)
 	}
 	if len(listed) != 1 || listed[0].BlockReason == nil {
 		t.Fatalf("expected the blocked 'running' row with a reason, got %+v", listed)
+	}
+}
+
+func TestGetTodayStatusCodes(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	router := api.NewRouter(conn, "secret")
+
+	// No programme seeded yet — a real 404, not a lie-through-200.
+	req := httptest.NewRequest(http.MethodGet, "/api/today?date=2026-01-05", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 with no active phase, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/today?date=not-a-date", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an unparseable date, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
