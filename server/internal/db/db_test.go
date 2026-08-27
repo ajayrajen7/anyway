@@ -16,7 +16,7 @@ func TestOpenAppliesMigrations(t *testing.T) {
 	tables := []string{
 		"exercises", "exercise_muscles", "phases", "day_templates", "slots",
 		"slot_swaps", "sessions", "logged_sets", "morning_checks", "weigh_ins",
-		"protein_logs", "mobility_logs", "cardio_logs", "outbox",
+		"protein_logs", "mobility_logs", "cardio_logs", "outbox", "settings",
 	}
 	for _, table := range tables {
 		var name string
@@ -37,5 +37,34 @@ func TestOpenIsIdempotent(t *testing.T) {
 	// CREATE-TABLE-IF-NOT-EXISTS migrations without error.
 	if _, err := db.Open(":memory:"); err != nil {
 		t.Fatalf("second open: %v", err)
+	}
+}
+
+// TestOpenIsIdempotentOnARealFileAcrossRestarts is TestOpenIsIdempotent's
+// sharper sibling: :memory: gives every Open call its own fresh database, so
+// it can never actually exercise re-running a migration against a database
+// that already has it applied — which is exactly the case
+// 0003_logged_sets_client_uuid.sql's non-idempotent `ALTER TABLE ADD COLUMN`
+// needs covered (see db.go's isDuplicateColumnError).
+func TestOpenIsIdempotentOnARealFileAcrossRestarts(t *testing.T) {
+	path := t.TempDir() + "/anyway.db"
+
+	conn, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	conn.Close()
+
+	// Simulates a server restart against a database that has already had
+	// every migration applied once, including the ALTER TABLE.
+	conn, err = db.Open(path)
+	if err != nil {
+		t.Fatalf("second open (restart) failed — likely the ALTER TABLE column addition erroring on retry: %v", err)
+	}
+	defer conn.Close()
+
+	var name string
+	if err := conn.QueryRow(`SELECT name FROM pragma_table_info('logged_sets') WHERE name = 'client_uuid'`).Scan(&name); err != nil {
+		t.Fatalf("client_uuid column missing after restart: %v", err)
 	}
 }

@@ -12,6 +12,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
+
+	"github.com/ajayrajen7/anyway/server/internal/settings"
 )
 
 var validKind = map[string]bool{"lifting": true, "cardio_mobility": true, "rest": true}
@@ -167,6 +170,14 @@ func Apply(ctx context.Context, conn *sql.DB, s *Seed) (Applied, error) {
 				out.Swaps++
 			}
 		}
+	}
+
+	// M9: the Vault's 84-day clock (docs/prd.md §A4) counts from the day the
+	// programme was seeded. SetIfAbsent — not Set — so re-running the seed
+	// (e.g. re-applying the same phase, or applying phase 2 later) never
+	// resets a clock that's already ticking.
+	if err := settings.SetIfAbsent(ctx, tx, settings.ProgrammeStartDateKey, time.Now().Format("2006-01-02")); err != nil {
+		return Applied{}, fmt.Errorf("record programme_start_date: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

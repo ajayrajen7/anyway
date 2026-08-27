@@ -24,6 +24,7 @@
 - The session runner reads from and writes to **IndexedDB only**. It never awaits a network call.
 - Every mutation appends to a local `outbox` table.
 - A background sync worker drains the outbox to the server when connectivity returns. Simple last-write-wins on `(entity, id)`; there is one user and one device, so conflict resolution is not a real problem.
+  **Amendment (M9):** built as **foreground-only** — triggered on app mount and on the browser's `online` event (`src/main.tsx` → `src/lib/sync.ts`), not a true Service-Worker background sync. Same reasoning as M6's deferred push notifications: real background delivery has real cross-browser/iOS reliability constraints this sandboxed build can't verify against a device. Nothing is lost by this — the outbox already survives indefinitely offline (that's the whole point of §B2) — it just drains a little later than it theoretically could.
 - Server SQLite is the durable backup, not the runtime dependency.
 - **Nightly `VACUUM INTO` to a timestamped file, plus off-box copy.** Six months of data with no backup is the one unrecoverable failure mode here.
 
@@ -122,6 +123,24 @@ CREATE TABLE outbox (
 );
 ```
 
+**Amendment (M9):** two additions the original schema had no room for:
+
+```sql
+CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+ALTER TABLE logged_sets ADD COLUMN client_uuid TEXT;
+CREATE UNIQUE INDEX idx_logged_sets_client_uuid ON logged_sets (client_uuid);
+```
+
+`settings` is a generic key/value store; its first (only, so far) key is
+`programme_start_date`, written once by `programme.Apply` the moment a phase
+is seeded — it's the day the Vault's 84-day clock (§A4) starts counting
+from, and the original schema had nowhere to put it. `logged_sets` was
+always supposed to carry the client UUID §B5 already required ("every write
+carries a client-generated UUID so outbox replays are idempotent") but the
+column never actually existed until now. See `server/internal/settings` and
+`server/internal/sync`, and `memory.md` for the SQLite-has-no-`ADD COLUMN IF
+NOT EXISTS` migration wrinkle this required in `db.go`.
+
 `morning_checks` has no `unlogged` value by design — absence is the representation. Never insert a default.
 
 ## B4. The one query that matters
@@ -165,6 +184,15 @@ Every write carries a client-generated UUID so outbox replays are idempotent.
 **Amendment (M3):** `GET /api/today` takes an explicit `date` query param — the client's *local* calendar day (`YYYY-MM-DD`), not the server's. The server cannot otherwise know the user's timezone, and "which day is today" must be the same day the user is actually living, not wherever the box happens to be hosted. Falls back to the server's own local date only if omitted (a convenience for manual/curl testing, not something the frontend should rely on).
 
 **Amendment (M8):** `GET /api/week` as specified assumes the server already has synced "actual" data (logged sets, morning checks) to aggregate — i.e. that M9's sync worker exists and has run. It doesn't yet, and every mutation since M4 has deliberately stayed local-first (Dexie + outbox, server sync deferred to M9). Rather than build `GET /api/week` now and have it always return zeros, M8 adds **`GET /api/programme`** — a plain read of the active phase's day_templates + slots, no date range, cached client-side once (it's phase-wide and constant across weeks) the same way the exercise library is. The Week View computes *both* prescribed coverage (from this cache) and actual coverage (from local `loggedSets`/`morningChecks`) entirely client-side. `GET /api/week` stays an unbuilt stub until M9 makes server-side "actual" data real; §B4's query is exactly what the client-side computation reproduces in TypeScript (see `src/lib/week.ts`).
+
+**Amendment (M9):** the M8 precondition above is now technically satisfied — `POST /api/sync` makes server-side `logged_sets`/`morning_checks` real — but `GET /api/week` stays an unbuilt stub anyway. The Week View's client-side computation (`src/lib/week.ts`) is complete, tested, and works fully offline; building a server aggregate now would duplicate that logic for a screen that already has no reason to call it. Deferred indefinitely, not scheduled for a future milestone, unless a real need for a server-side weekly rollup shows up (e.g. `GET /api/export`, M10).
+
+Also in M9:
+- **`POST /api/sync`** is now real: body is a JSON array of `{entity, entity_id, payload}` (the shape of one outbox row, minus `id`/`created_at`/`synced_at`); response is a same-length array of `{entity, entity_id, ok, error?}`. One bad entry never fails the batch — each is applied independently (`server/internal/sync#Drain`), and the client (`src/lib/sync.ts`) marks its own outbox rows synced only for the entries the response reports `ok`.
+- **`POST /api/mobility`** is a new route, not in this document's original list — a gap noted in M7's `memory.md` (mobility has been logged client-side, with an outbox entity and everything, since M7, with nowhere real to sync to). Body: `{date}`; always writes `mobility_logs.done = 1` — there is no `done: false` to write, matching the client's own presence-only model (§B3, `mobility_logs`).
+- **`POST /api/sessions/:id/sets/:sid/skip`** and **`POST /api/sessions/:id/add`** stay unimplemented — deliberately, not a gap. The client never has a create-then-patch flow for a set (`SessionRunner` logs each commit as one complete `logged_sets` row via a single `logged_set` outbox entity — a skip is just `status: 'skipped'` on that same write), and swap/add-exercise bookkeeping (`SessionOverlay`, M5) is local-only by design: every set actually logged against a swapped/added exercise already carries its own `provenance` in the synced `logged_sets` row, so there is nothing left for these two routes to persist.
+- **Idempotency for `logged_set`** is an upsert on the new `client_uuid` unique index (`ON CONFLICT(client_uuid) DO NOTHING`) — this guards against a *retried* sync POST creating a duplicate row, not against editing an already-logged set: the client never revises a committed set through this path, so a second `client_uuid` for the same `(session_id, exercise_id, set_index)` is a deliberate new history entry, not a duplicate. Every other entity (`morning_check`, `protein_log`, `mobility_log`, `weigh_in`) is keyed by its own natural key (a date, or date+modality for `cardio_log`) and upserts/replaces on that — idempotent by construction, no UUID needed.
+- **The Vault's default is locked, not open.** `GET /api/weigh-ins` consults a `programme_start_date` setting that a fresh database simply doesn't have yet (before the M2 programme seed has ever run). `server/internal/settings#VaultUnlocked` treats that absence as **locked**, never as "no gate configured, allow it" — the one deliberately conservative call in this milestone, on the reasoning that the wrong answer in either direction isn't symmetric: showing withheld weight data early defeats the entire feature, while staying locked a little longer than strictly required costs nothing. The 84-day comparison itself uses the *server's* local day (not the client's `date` param convention `GET /api/today` uses) — a duration gate only needs one global start instant, and using the server's clock can at most delay an unlock by a few hours across timezones, never bring it forward.
 
 ## B6. Frontend rules Claude Code must enforce
 

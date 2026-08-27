@@ -1,6 +1,6 @@
 // Thin fetch wrapper for the Go API (docs/architecture.md §B5). Auth is a
 // single static bearer token (B1) — no session/cookie plumbing, one user.
-import { Exercise, ProgrammeResponse, TodayResponse } from './types';
+import { Exercise, ProgrammeResponse, SyncResult, TodayResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? '';
@@ -55,4 +55,17 @@ export async function getExerciseLibrary(): Promise<Exercise[]> {
 export async function getProgramme(): Promise<ProgrammeResponse> {
   const raw = await apiFetch<unknown>('/api/programme');
   return ProgrammeResponse.parse(raw);
+}
+
+// POST /api/sync — the batched outbox drain (M9, docs/architecture.md §B5).
+// Sends every not-yet-synced outbox row in one request; the response tells
+// the caller (src/lib/sync.ts) which ones landed so it knows which local
+// rows to mark synced. One bad entry never fails the whole batch server-side
+// (see server/internal/sync#Drain) — the *response* carries per-entry
+// success/failure, not the HTTP status.
+export async function postSync(
+  entries: { entity: string; entity_id: string; payload: unknown }[],
+): Promise<SyncResult[]> {
+  const raw = await apiFetch<unknown>('/api/sync', { method: 'POST', body: JSON.stringify(entries) });
+  return SyncResult.array().parse(raw);
 }

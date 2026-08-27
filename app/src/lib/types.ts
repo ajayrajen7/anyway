@@ -223,6 +223,24 @@ export const SessionOverlay = z.object({
 });
 export type SessionOverlay = z.infer<typeof SessionOverlay>;
 
+// --- Weigh-in (prd.md §A4, "the Vault") — M9 ---
+
+export const WeighIn = z.object({
+  date: z.string(),
+  weight_kg: z.number(),
+});
+export type WeighIn = z.infer<typeof WeighIn>;
+
+// --- POST /api/sync (docs/architecture.md §B5, M9) ---
+
+export const SyncResult = z.object({
+  entity: z.string(),
+  entity_id: z.string(),
+  ok: z.boolean(),
+  error: z.string().optional(),
+});
+export type SyncResult = z.infer<typeof SyncResult>;
+
 export const OutboxEntry = z.object({
   id: z.number().optional(),
   entity: z.string(),

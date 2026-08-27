@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -56,8 +57,19 @@ func migrate(conn *sql.DB) error {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
 		if _, err := conn.Exec(string(sqlBytes)); err != nil {
+			if isDuplicateColumnError(err) {
+				// SQLite has no `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+				// (see 0003_logged_sets_client_uuid.sql), so a genuinely
+				// idempotent re-run of that file errors here every time
+				// after the first. That's expected, not a real failure.
+				continue
+			}
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
 	}
 	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	return strings.Contains(err.Error(), "duplicate column name")
 }

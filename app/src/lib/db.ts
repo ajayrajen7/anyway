@@ -13,6 +13,7 @@ import type {
   OutboxEntry,
   ProteinLog,
   SessionOverlay,
+  WeighIn,
 } from './types';
 
 export class AppDatabase extends Dexie {
@@ -26,6 +27,7 @@ export class AppDatabase extends Dexie {
   mobilityLogs!: Table<MobilityLog, string>;
   cardioLogs!: Table<CardioLog, number>;
   programmeCache!: Table<CachedProgramme, number>;
+  weighIns!: Table<WeighIn, string>;
 
   constructor() {
     super('anyway');
@@ -69,6 +71,13 @@ export class AppDatabase extends Dexie {
     // src/lib/programmeCache.ts, src/lib/types.ts#CachedProgramme.
     this.version(5).stores({
       programmeCache: 'id',
+    });
+    // M9: weigh-ins (prd.md §A4, "the Vault") — keyed by date like the other
+    // once-a-day logs. There is deliberately no read helper anywhere in this
+    // codebase that exposes `weight_kg` back to a UI component; see
+    // src/lib/weighIn.ts.
+    this.version(6).stores({
+      weighIns: 'date',
     });
   }
 }
