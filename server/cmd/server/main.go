@@ -17,6 +17,16 @@ import (
 
 func main() {
 	addr := envOr("ANYWAY_ADDR", ":8080")
+	// Railway (and most PaaS hosts — Heroku, Render, ...) assigns its own
+	// port and expects the app to listen on it via $PORT, overriding
+	// whatever's configured; a healthcheck prober hitting that port finds
+	// nothing home otherwise, even though the app is running fine on
+	// ANYWAY_ADDR's own port. $PORT wins when set, ANYWAY_ADDR is the
+	// override for hosts that don't use this convention (a bare VPS, local
+	// dev), :8080 is the last-resort default.
+	if port := os.Getenv("PORT"); port != "" {
+		addr = ":" + port
+	}
 	dbPath := envOr("ANYWAY_DB_PATH", "anyway.db")
 	token := os.Getenv("ANYWAY_API_TOKEN")
 	if token == "" {
