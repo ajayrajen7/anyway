@@ -15,9 +15,9 @@
 | Backend | Go 1.22 + chi | Matches prior stack, single static binary |
 | Database | SQLite via `modernc.org/sqlite` | Pure Go, no cgo, one file |
 | Auth | Single static bearer token | One user. Do not build auth. |
-| Hosting | Fly.io, SQLite on a persistent volume | decided post-M10 — see below and memory.md |
+| Hosting | Render, SQLite on a persistent disk | decided post-M10 — see below and memory.md |
 
-**Amendment (post-M10, deployment):** hosting is Fly.io. The frontend and backend deploy as **one binary**, not two services — the Go server embeds the built `app/dist` output (`server/internal/webapp`, populated by `scripts/build-embedded.sh`/the `Dockerfile`'s multi-stage build) and serves it as the SPA fallback for anything `/api/*`/`/healthz` don't claim. This means production needs no CORS at all (the M9 `corsMiddleware` fix stays load-bearing only for local dev, where the two still run as separate `npm run dev`/`go run` processes on different ports) and only one thing to host, one HTTPS cert, one persistent volume. See `memory.md` for why this was chosen over hosting the frontend and backend as two separate services.
+**Amendment (post-M10, deployment):** hosting is Render (Fly.io was the original choice; its dashboard hit a persistent login bug during setup, unrelated to anything in this repo — see memory.md). The frontend and backend deploy as **one binary**, not two services — the Go server embeds the built `app/dist` output (`server/internal/webapp`, populated by `scripts/build-embedded.sh`/the `Dockerfile`'s multi-stage build) and serves it as the SPA fallback for anything `/api/*`/`/healthz` don't claim. This means production needs no CORS at all (the M9 `corsMiddleware` fix stays load-bearing only for local dev, where the two still run as separate `npm run dev`/`go run` processes on different ports) and only one thing to host, one HTTPS cert, one persistent disk. GitHub Actions builds the image and pushes it to a private `ghcr.io` repository; Render pulls it via a Deploy Hook. See `memory.md` for the full reasoning, including why the image is kept private.
 
 ## B2. Offline-first — the non-negotiable
 
