@@ -33,7 +33,14 @@ COPY --from=frontend /src/app/dist/. ./internal/webapp/dist/
 COPY seed/exercises.json seed/phase1.json ./internal/bootstrap/data/
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/anyway-server ./cmd/server
 
-FROM gcr.io/distroless/static-debian12:nonroot
+# Root, not :nonroot — a real Railway deploy failed here: a freshly
+# mounted persistent volume is root-owned with restrictive permissions by
+# default, mounted before the app process ever starts, and this image has
+# no shell to chown it even if we wanted to. Running as root inside one
+# isolated single-user container (not the host) is a reasonable tradeoff
+# against not being able to write the one persistent volume the whole app
+# exists to use. See memory.md.
+FROM gcr.io/distroless/static-debian12
 COPY --from=backend /out/anyway-server /anyway-server
 EXPOSE 8080
 ENTRYPOINT ["/anyway-server"]
