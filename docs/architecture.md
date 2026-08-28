@@ -23,6 +23,8 @@
 
 Every free tier evaluated (Render's included) either has no persistent disk at all or discards it between restarts, which is fatal for an app whose entire point is a training log that survives a 6-month programme — some small paid tier with an attached volume is the realistic floor, discussed and confirmed with the project owner (memory.md).
 
+A freshly-provisioned host's persistent volume starts out completely empty, and not every platform gives interactive shell access to run `cmd/seed`/`cmd/programme` by hand. `server/internal/bootstrap` auto-seeds the exercise library and Phase 1 programme on first boot instead, embedding the same `seed/*.json` files (copied in at build time, same `go:embed`-can't-reach-outside-its-package pattern as `internal/db`'s migrations and `internal/webapp`'s frontend). It checks each table independently and only ever seeds an empty one — once a phase exists it is never touched again, since `programme.Apply`'s wipe-and-reinsert strategy (§B7/M2) is unsafe once real `sessions` rows exist.
+
 ## B2. Offline-first — the non-negotiable
 
 **Gym basements have no signal.** If the session runner requires network, the app is unusable on exactly the occasions it matters.

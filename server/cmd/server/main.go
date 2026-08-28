@@ -10,6 +10,7 @@ import (
 
 	"github.com/ajayrajen7/anyway/server/internal/api"
 	"github.com/ajayrajen7/anyway/server/internal/backup"
+	"github.com/ajayrajen7/anyway/server/internal/bootstrap"
 	"github.com/ajayrajen7/anyway/server/internal/db"
 	"github.com/ajayrajen7/anyway/server/internal/webapp"
 )
@@ -27,6 +28,16 @@ func main() {
 		log.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
+
+	// Auto-seed a fresh deploy's empty database (exercise library + Phase 1
+	// programme) on first boot — see internal/bootstrap's doc comment. A
+	// hard failure here means the embedded seed data itself is broken
+	// (it's static and already validated by seed_test.go/programme_test.go
+	// against the real files), so failing loudly and refusing to serve a
+	// half-seeded app is correct, not overly strict.
+	if err := bootstrap.Run(context.Background(), conn); err != nil {
+		log.Fatalf("bootstrap seed data: %v", err)
+	}
 
 	// Nightly VACUUM INTO backup (docs/architecture.md §B2, M10). Off-box
 	// copy is deliberately not wired up yet — see internal/backup's doc

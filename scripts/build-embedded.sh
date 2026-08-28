@@ -26,6 +26,17 @@ rm -rf "$dist_dest"
 mkdir -p "$dist_dest"
 cp -r "$repo_root/app/dist/." "$dist_dest/"
 
+# Real exercise library + Phase 1 programme, for internal/bootstrap to
+# auto-seed a fresh deploy's empty database with on first run (see that
+# package's doc comment). This OVERWRITES two tracked placeholder files
+# (data/exercises.json, data/phase1.json — committed as [] / an empty
+# phase so `go build`/`go test` never need this copy step to have run) —
+# `git status` after running this script locally will show them modified;
+# don't commit that. seed/ stays the one source of truth either way.
+echo "==> copying seed data into server/internal/bootstrap/data"
+cp "$repo_root/seed/exercises.json" "$repo_root/server/internal/bootstrap/data/exercises.json"
+cp "$repo_root/seed/phase1.json" "$repo_root/server/internal/bootstrap/data/phase1.json"
+
 echo "==> building server binary"
 cd "$repo_root/server"
 CGO_ENABLED=0 go build -o "$repo_root/server/anyway-server" ./cmd/server

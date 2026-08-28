@@ -57,9 +57,21 @@ func ParseFile(path string) (*Seed, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
+	s, err := Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return s, nil
+}
+
+// Parse is ParseFile's validation logic over raw bytes rather than a path —
+// pulled out so server/internal/bootstrap can validate the phase seed
+// embedded straight into the binary (go:embed has no file to hand ParseFile
+// a path for) without duplicating any of the actual validation rules.
+func Parse(raw []byte) (*Seed, error) {
 	var s Seed
 	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, fmt.Errorf("parse: %w", err)
 	}
 
 	seenWeekday := map[int]bool{}

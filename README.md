@@ -32,7 +32,7 @@ Hosting is **Railway**, one binary embedding the built frontend (no separate fro
 - Environment variables: `ANYWAY_ADDR=:8080`, `ANYWAY_DB_PATH=/data/anyway.db`, `ANYWAY_BACKUP_DIR=/data/backups`, `ANYWAY_BACKUP_HOUR=3`, `ANYWAY_BACKUP_KEEP=30`, and `ANYWAY_API_TOKEN` (any random string you generate — this is the only value the frontend and backend need to agree on, and it's set here once, nowhere else)
 - Health check path: `/healthz`
 
-Push to `main` and Railway rebuilds and redeploys automatically from then on.
+Push to `main` and Railway rebuilds and redeploys automatically from then on. **No manual seeding step needed** — a database with no exercises yet auto-seeds the full exercise library and the Phase 1 programme on first boot (`server/internal/bootstrap`), from the same `seed/*.json` files `cmd/seed`/`cmd/programme` use for local dev. It runs once, ever, per database: once real data exists it never touches anything again, so this is exactly as safe on every subsequent restart/redeploy as it is on the first.
 
 To sanity-check the exact artifact locally without Docker or a host at all:
 ```sh

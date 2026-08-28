@@ -25,9 +25,12 @@ WORKDIR /src/server
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server/ ./
-# go:embed can't reach outside its own package dir — see
-# internal/webapp's doc comment — so the frontend build lands here first.
+# go:embed can't reach outside its own package dir — see internal/webapp's
+# and internal/bootstrap's doc comments — so the frontend build and the
+# real seed data both land here before `go build`. internal/bootstrap
+# auto-seeds a fresh deploy's empty database with these on first run.
 COPY --from=frontend /src/app/dist/. ./internal/webapp/dist/
+COPY seed/exercises.json seed/phase1.json ./internal/bootstrap/data/
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/anyway-server ./cmd/server
 
 FROM gcr.io/distroless/static-debian12:nonroot
