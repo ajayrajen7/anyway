@@ -8,6 +8,8 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -22,6 +24,18 @@ var migrationsFS embed.FS
 // idempotent (CREATE TABLE IF NOT EXISTS) so re-running an already-applied
 // file is harmless — there is no separate "applied" ledger yet.
 func Open(path string) (*sql.DB, error) {
+	// SQLite can create the file itself but never the directory it lives in
+	// — a fresh persistent volume/disk mounted at, say, /data won't
+	// necessarily have had ANYWAY_DB_PATH's parent directory created by
+	// whatever provisioned it. A no-op if the directory already exists (the
+	// normal case), and ":memory:"/a bare filename both resolve harmlessly
+	// (filepath.Dir gives "." for the latter).
+	if path != ":memory:" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, fmt.Errorf("create db directory: %w", err)
+		}
+	}
+
 	conn, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)

@@ -6,6 +6,21 @@ import (
 	"github.com/ajayrajen7/anyway/server/internal/db"
 )
 
+// TestOpenCreatesAMissingParentDirectory reproduces a real deploy failure:
+// a fresh persistent volume/disk (e.g. Railway's, mounted at /data) can
+// exist without ANYWAY_DB_PATH's parent directory having been created
+// inside it — SQLite creates the file itself, never the directory, and
+// fails with "unable to open database file" otherwise.
+func TestOpenCreatesAMissingParentDirectory(t *testing.T) {
+	path := t.TempDir() + "/nested/does/not/exist/anyway.db"
+
+	conn, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("expected Open to create the missing parent directories, got: %v", err)
+	}
+	defer conn.Close()
+}
+
 func TestOpenAppliesMigrations(t *testing.T) {
 	conn, err := db.Open(":memory:")
 	if err != nil {
