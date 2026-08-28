@@ -4,20 +4,21 @@
 # scripts/build-embedded.sh's steps as separate Docker stages so each is
 # cached independently (frontend deps rarely change alongside Go code).
 #
-# Build with: docker build --build-arg ANYWAY_API_TOKEN=<token> -t anyway .
-# ANYWAY_API_TOKEN is baked into the frontend bundle at build time (it must
-# match the same token the running server is given at deploy time via the
-# ANYWAY_API_TOKEN env var/secret) — see docs/architecture.md §B1: this is
-# a single static bearer token, not real auth, by design (one user).
+# No build args needed: ANYWAY_API_TOKEN (architecture.md §B1's single
+# static bearer token) is a plain runtime environment variable on whatever
+# host runs the final image — the Go server injects it into index.html at
+# serve time (see server/internal/webapp#injectConfig). This is deliberate,
+# not an oversight: not every hosting platform's dashboard supports custom
+# Docker build arguments (discovered when Render's didn't), but every one
+# of them supports a runtime env var.
 
 FROM node:22-alpine AS frontend
 WORKDIR /src/app
 COPY app/package.json app/package-lock.json ./
 RUN npm ci
 COPY app/ ./
-ARG ANYWAY_API_TOKEN
 # Empty VITE_API_BASE — same origin as the Go binary serving this build.
-RUN VITE_API_BASE="" VITE_API_TOKEN="$ANYWAY_API_TOKEN" npm run build
+RUN VITE_API_BASE="" npm run build
 
 FROM golang:1.25-alpine AS backend
 WORKDIR /src/server

@@ -1,9 +1,10 @@
 // Thin fetch wrapper for the Go API (docs/architecture.md §B5). Auth is a
 // single static bearer token (B1) — no session/cookie plumbing, one user.
 import { Exercise, ProgrammeResponse, SyncResult, TodayResponse } from './types';
+import { getApiToken } from './runtimeConfig';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
-const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? '';
+const API_TOKEN = getApiToken();
 
 export class ApiError extends Error {
   status: number;

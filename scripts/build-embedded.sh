@@ -7,14 +7,18 @@
 #
 # VITE_API_BASE is forced empty so the built frontend calls relative
 # /api/... paths — same origin as the binary serving it, no CORS needed in
-# this deploy shape (see app/.env.example's own comment).
+# this deploy shape (see app/.env.example's own comment). ANYWAY_API_TOKEN
+# is NOT needed to build — the server injects it into index.html at serve
+# time from its own runtime env var (see server/internal/webapp), not baked
+# in here — so this build is identical regardless of who runs the binary
+# or what token they give it at runtime.
 set -eu
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "==> building frontend"
 cd "$repo_root/app"
-VITE_API_BASE="" VITE_API_TOKEN="${ANYWAY_API_TOKEN:?ANYWAY_API_TOKEN must be set — it's baked into the frontend build and must match the server's own}" npm run build
+VITE_API_BASE="" npm run build
 
 echo "==> copying frontend build into server/internal/webapp/dist"
 dist_dest="$repo_root/server/internal/webapp/dist"

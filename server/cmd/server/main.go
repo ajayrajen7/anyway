@@ -41,7 +41,7 @@ func main() {
 	// embedded frontend build (internal/webapp) — the single-binary,
 	// same-origin production deploy decided alongside M10's hosting choice.
 	// A dev setup running `npm run dev` separately never hits this at all.
-	router.NotFound(webapp.Handler().ServeHTTP)
+	router.NotFound(webapp.Handler(token).ServeHTTP)
 
 	log.Printf("listening on %s (db: %s)", addr, dbPath)
 	log.Fatal(http.ListenAndServe(addr, router))
