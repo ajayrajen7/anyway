@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { db } from './db';
-import { addExercise, applySwap, getOverlay } from './overlay';
+import { addExercise, applySwap, getOverlay, removeExercise } from './overlay';
 import type { ExerciseRef } from './types';
 
 const swapEx: ExerciseRef = { id: 12, slug: 'leg-press-sl', name: 'Single-leg leg press', unilateral: true, increment_kg: 5 };
@@ -11,8 +11,8 @@ afterEach(async () => {
 });
 
 describe('getOverlay', () => {
-  it('returns an empty overlay when nothing has been swapped or added yet', async () => {
-    expect(await getOverlay(1)).toEqual({ sessionId: 1, swaps: {}, added: [] });
+  it('returns an empty overlay when nothing has been swapped, added, or deleted yet', async () => {
+    expect(await getOverlay(1)).toEqual({ sessionId: 1, swaps: {}, added: [], removed: [] });
   });
 });
 
@@ -33,7 +33,7 @@ describe('applySwap', () => {
 
   it('does not affect a different session', async () => {
     await applySwap(1, 5, swapEx, 'swap_in_list');
-    expect(await getOverlay(2)).toEqual({ sessionId: 2, swaps: {}, added: [] });
+    expect(await getOverlay(2)).toEqual({ sessionId: 2, swaps: {}, added: [], removed: [] });
   });
 });
 
@@ -53,5 +53,23 @@ describe('addExercise', () => {
     await addExercise(1, swapEx, 'trainer', null);
     const overlay = await getOverlay(1);
     expect(overlay.added.map((a) => a.exercise.id)).toEqual([addedEx.id, swapEx.id]);
+  });
+});
+
+describe('removeExercise', () => {
+  it('adds the key to removed', async () => {
+    await removeExercise(1, 'slot-5');
+    expect((await getOverlay(1)).removed).toEqual(['slot-5']);
+  });
+
+  it('is idempotent — deleting the same exercise twice does not duplicate it', async () => {
+    await removeExercise(1, 'slot-5');
+    await removeExercise(1, 'slot-5');
+    expect((await getOverlay(1)).removed).toEqual(['slot-5']);
+  });
+
+  it('does not affect a different session', async () => {
+    await removeExercise(1, 'slot-5');
+    expect((await getOverlay(2)).removed).toEqual([]);
   });
 });

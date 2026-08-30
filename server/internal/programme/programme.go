@@ -184,10 +184,12 @@ func Apply(ctx context.Context, conn *sql.DB, s *Seed) (Applied, error) {
 		}
 	}
 
-	// M9: the Vault's 84-day clock (docs/prd.md §A4) counts from the day the
-	// programme was seeded. SetIfAbsent — not Set — so re-running the seed
-	// (e.g. re-applying the same phase, or applying phase 2 later) never
-	// resets a clock that's already ticking.
+	// M9: records the day the programme was first seeded (the old Vault
+	// feature's 84-day clock counted from this; the Vault itself was removed
+	// in the UX refactor, but the marker is kept — a future "week N of the
+	// programme" label would still need it). SetIfAbsent — not Set — so
+	// re-running the seed (e.g. re-applying the same phase, or applying
+	// phase 2 later) never resets a clock that's already ticking.
 	if err := settings.SetIfAbsent(ctx, tx, settings.ProgrammeStartDateKey, time.Now().Format("2006-01-02")); err != nil {
 		return Applied{}, fmt.Errorf("record programme_start_date: %w", err)
 	}

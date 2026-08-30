@@ -39,6 +39,7 @@ afterEach(async () => {
   await db.proteinLogs.clear();
   await db.mobilityLogs.clear();
   await db.cardioLogs.clear();
+  await db.stepsLogs.clear();
   await db.outbox.clear();
 });
 
@@ -61,18 +62,18 @@ const liftingDay: TodayResponse = {
 };
 
 describe('Today screen', () => {
-  it('renders a lifting day card with the session card and a Start session link', async () => {
+  it('renders a lifting day card headed by the weekday name (never the phase day-template name), with a Start session link', async () => {
     getTodayMock.mockResolvedValue(liftingDay);
     renderToday();
 
-    expect(await screen.findByRole('heading', { name: 'Lower A' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Monday' })).toBeInTheDocument();
+    expect(screen.queryByText('Lower A')).not.toBeInTheDocument();
     expect(screen.getByText('6 exercises · ~55 min')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'Start session' });
     expect(link).toHaveAttribute('href', '/session/42');
-    expect(screen.getByRole('link', { name: 'This week →' })).toHaveAttribute('href', '/week');
   });
 
-  it('renders the cardio/mobility day without a Start session link', async () => {
+  it('renders the cardio/mobility day, headed by the weekday name, without a Start session link', async () => {
     getTodayMock.mockResolvedValue({
       date: '2026-01-07',
       weekday: 3,
@@ -82,11 +83,11 @@ describe('Today screen', () => {
     } satisfies TodayResponse);
     renderToday();
 
-    expect(await screen.findByRole('heading', { name: 'Mobility + Zone 2' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Wednesday' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Start session' })).not.toBeInTheDocument();
   });
 
-  it('renders the rest day', async () => {
+  it('renders the rest day, headed by the weekday name', async () => {
     getTodayMock.mockResolvedValue({
       date: '2026-01-11',
       weekday: 7,
@@ -96,7 +97,7 @@ describe('Today screen', () => {
     } satisfies TodayResponse);
     renderToday();
 
-    expect(await screen.findByRole('heading', { name: 'Off' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Sunday' })).toBeInTheDocument();
     expect(screen.getByText(/flat walk only/i)).toBeInTheDocument();
   });
 
@@ -120,11 +121,24 @@ describe('Today screen', () => {
     expect(await db.mobilityLogs.get('2026-01-05')).toEqual({ date: '2026-01-05' });
   });
 
+  it('shows a Steps stepper on any day and persists on tap', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue(liftingDay);
+    renderToday();
+
+    await screen.findByText('Steps');
+    expect(screen.getByText('0')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Increase steps' }));
+
+    expect(screen.getByText('500')).toBeInTheDocument();
+    expect(await db.stepsLogs.get('2026-01-05')).toEqual({ date: '2026-01-05', steps: 500 });
+  });
+
   it('hides the protein row before 18:00', async () => {
     isAfter6pmMock.mockReturnValue(false);
     getTodayMock.mockResolvedValue(liftingDay);
     renderToday();
-    await screen.findByRole('heading', { name: 'Lower A' });
+    await screen.findByRole('heading', { name: 'Monday' });
     expect(screen.queryByText('Protein — hit 120g?')).not.toBeInTheDocument();
   });
 

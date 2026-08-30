@@ -118,13 +118,13 @@ CREATE TABLE morning_checks (
   pain TEXT NOT NULL CHECK (pain IN ('none','background','noticeable','limiting'))
 );
 
-CREATE TABLE weigh_ins   (date TEXT PRIMARY KEY, weight_kg REAL NOT NULL);
 CREATE TABLE protein_logs(date TEXT PRIMARY KEY, hit INTEGER NOT NULL);
 CREATE TABLE mobility_logs(date TEXT PRIMARY KEY, done INTEGER NOT NULL);
 CREATE TABLE cardio_logs (
   id INTEGER PRIMARY KEY, date TEXT NOT NULL,
   modality TEXT NOT NULL, duration_min INTEGER NOT NULL
 );
+CREATE TABLE steps_logs (date TEXT PRIMARY KEY, steps INTEGER NOT NULL);
 
 CREATE TABLE outbox (
   id INTEGER PRIMARY KEY, entity TEXT, entity_id TEXT,
@@ -142,8 +142,7 @@ CREATE UNIQUE INDEX idx_logged_sets_client_uuid ON logged_sets (client_uuid);
 
 `settings` is a generic key/value store; its first (only, so far) key is
 `programme_start_date`, written once by `programme.Apply` the moment a phase
-is seeded — it's the day the Vault's 84-day clock (§A4) starts counting
-from, and the original schema had nowhere to put it. `logged_sets` was
+is seeded, and the original schema had nowhere to put it. `logged_sets` was
 always supposed to carry the client UUID §B5 already required ("every write
 carries a client-generated UUID so outbox replays are idempotent") but the
 column never actually existed until now. See `server/internal/settings` and
@@ -151,6 +150,15 @@ column never actually existed until now. See `server/internal/settings` and
 NOT EXISTS` migration wrinkle this required in `db.go`.
 
 `morning_checks` has no `unlogged` value by design — absence is the representation. Never insert a default.
+
+**Amendment (UX refactor, post-M10):** `weigh_ins` is dropped (`DROP TABLE
+IF EXISTS`, migration `0005`) along with the whole weigh-in/Vault feature —
+the owner does not want weight tracked at all. `programme_start_date`
+survives in `settings` regardless (it's a generic marker with a possible
+future use — a "week N of the programme" label — independent of the Vault
+it was originally built for). `steps_logs` (migration `0006`) is added: a
+real daily count, shaped like `protein_logs`, alongside the new Steps entry
+on Today (§A3.2) and the new "3 of 3" Week Plan grading (§A3.8).
 
 ## B4. The one query that matters
 
@@ -178,10 +186,9 @@ POST /api/sessions/:id/add          → { exercise_id, added_by }
 POST /api/sessions/:id/complete     → { note? }
 GET  /api/exercises?q=              → search, excludes blocked unless ?include_blocked=1
 POST /api/morning-check             → { date, pain }
-POST /api/weigh-ins                 → { date, weight_kg }   (write always allowed)
-GET  /api/weigh-ins                 → 423 Locked before start+84d
 POST /api/protein                   → { date, hit }
 POST /api/cardio                    → { date, modality, duration_min }
+POST /api/steps                     → { date, steps }        — UX refactor addition, see below
 GET  /api/week?start=               → coverage actual/prescribed + volume + 7 pain values
 GET  /api/programme                 → active phase's full week structure (day_templates + slots) — M8 addition, see below
 POST /api/sync                      → outbox drain, idempotent by client uuid
@@ -196,22 +203,23 @@ Every write carries a client-generated UUID so outbox replays are idempotent.
 
 **Amendment (M9):** the M8 precondition above is now technically satisfied — `POST /api/sync` makes server-side `logged_sets`/`morning_checks` real — but `GET /api/week` stays an unbuilt stub anyway. The Week View's client-side computation (`src/lib/week.ts`) is complete, tested, and works fully offline; building a server aggregate now would duplicate that logic for a screen that already has no reason to call it. Deferred indefinitely, not scheduled for a future milestone, unless a real need for a server-side weekly rollup shows up (e.g. `GET /api/export`, M10).
 
+**Amendment (UX refactor, post-M10):** `POST/GET /api/weigh-ins` are removed entirely, along with the whole weigh-in/Vault feature (§A4 of `prd.md` is now a removal notice, not a spec) — the owner does not want weight tracked at all. `GET /api/export` no longer gates anything (see below) and `weigh_ins` is gone from both its table dump and the `db.go` schema (migration `0005`, `DROP TABLE IF EXISTS`). **`POST /api/steps`** is added — a plain upsert on `steps_logs(date, steps)`, the same idempotency shape as `POST /api/protein`/`POST /api/cardio`. The Week View itself is split into two bottom-nav tabs, Coverage (`/coverage`, this section's muscle-load screen) and Week Plan (`/week`, a new Mon–Sat green/yellow/red grid) — both still purely client-side, no new server routes needed for either (Week Plan's "session done" signal reads the existing `session_complete` outbox entries, not a new endpoint).
+
 Also in M9:
 - **`POST /api/sync`** is now real: body is a JSON array of `{entity, entity_id, payload}` (the shape of one outbox row, minus `id`/`created_at`/`synced_at`); response is a same-length array of `{entity, entity_id, ok, error?}`. One bad entry never fails the batch — each is applied independently (`server/internal/sync#Drain`), and the client (`src/lib/sync.ts`) marks its own outbox rows synced only for the entries the response reports `ok`.
 - **`POST /api/mobility`** is a new route, not in this document's original list — a gap noted in M7's `memory.md` (mobility has been logged client-side, with an outbox entity and everything, since M7, with nowhere real to sync to). Body: `{date}`; always writes `mobility_logs.done = 1` — there is no `done: false` to write, matching the client's own presence-only model (§B3, `mobility_logs`).
 - **`POST /api/sessions/:id/sets/:sid/skip`** and **`POST /api/sessions/:id/add`** stay unimplemented — deliberately, not a gap. The client never has a create-then-patch flow for a set (`SessionRunner` logs each commit as one complete `logged_sets` row via a single `logged_set` outbox entity — a skip is just `status: 'skipped'` on that same write), and swap/add-exercise bookkeeping (`SessionOverlay`, M5) is local-only by design: every set actually logged against a swapped/added exercise already carries its own `provenance` in the synced `logged_sets` row, so there is nothing left for these two routes to persist.
-- **Idempotency for `logged_set`** is an upsert on the new `client_uuid` unique index (`ON CONFLICT(client_uuid) DO NOTHING`) — this guards against a *retried* sync POST creating a duplicate row, not against editing an already-logged set: the client never revises a committed set through this path, so a second `client_uuid` for the same `(session_id, exercise_id, set_index)` is a deliberate new history entry, not a duplicate. Every other entity (`morning_check`, `protein_log`, `mobility_log`, `weigh_in`) is keyed by its own natural key (a date, or date+modality for `cardio_log`) and upserts/replaces on that — idempotent by construction, no UUID needed.
-- **`GET /api/export` (M10) is real** — a full JSON dump of every table (`server/internal/export`, a generic `SELECT *` over a fixed table whitelist rather than one struct per table, so it reflects the schema as-is including future columns without needing a matching update here). **One deliberate exception**: `weigh_ins` is included only once `VaultUnlocked` — omitted (an empty array, not a missing key) while locked. §A4 says "enforce server-side, not just in the UI"; a raw export is exactly the alternate route that would otherwise let the app's own on-screen restraint be trivially bypassed by opening this one URL instead, so the same gate applies here too.
-- **The Vault's default is locked, not open.** `GET /api/weigh-ins` consults a `programme_start_date` setting that a fresh database simply doesn't have yet (before the M2 programme seed has ever run). `server/internal/settings#VaultUnlocked` treats that absence as **locked**, never as "no gate configured, allow it" — the one deliberately conservative call in this milestone, on the reasoning that the wrong answer in either direction isn't symmetric: showing withheld weight data early defeats the entire feature, while staying locked a little longer than strictly required costs nothing. The 84-day comparison itself uses the *server's* local day (not the client's `date` param convention `GET /api/today` uses) — a duration gate only needs one global start instant, and using the server's clock can at most delay an unlock by a few hours across timezones, never bring it forward.
+- **Idempotency for `logged_set`** is an upsert on the new `client_uuid` unique index (`ON CONFLICT(client_uuid) DO NOTHING`) — this guards against a *retried* sync POST creating a duplicate row, not against editing an already-logged set: the client never revises a committed set through this path, so a second `client_uuid` for the same `(session_id, exercise_id, set_index)` is a deliberate new history entry, not a duplicate. Every other entity (`morning_check`, `protein_log`, `mobility_log`, `steps_log`) is keyed by its own natural key (a date, or date+modality for `cardio_log`) and upserts/replaces on that — idempotent by construction, no UUID needed.
+- **`GET /api/export` (M10) is real** — a full JSON dump of every table (`server/internal/export`, a generic `SELECT *` over a fixed table whitelist rather than one struct per table, so it reflects the schema as-is including future columns without needing a matching update here). **UX refactor:** the old `weigh_ins`-only Vault gate on this route is gone along with the feature — every table dumps unconditionally now.
 
 ## B6. Frontend rules Claude Code must enforce
 
-1. **No `<input type="number">` or any focusable text field inside the Session Runner set-logging screen (`/session/:id`).** Steppers only. This is a testable assertion — write a test for it. **Amendment (M5):** this rule scopes to the set-logging screen itself, matching prd.md §A3.3's own literal wording ("no keyboard is reachable from *this screen*"), not literally every route nested under `/session/*`. The Swap sheet (`/session/:id/swap/:slotId`, §A3.4) and Add-exercise (`/session/:id/add`, §A3.5) explicitly mock up a "Search…" text box each — those two screens get a real text input for tier-2/full-library search. The no-input test stays scoped to the Session Runner component only.
+1. **No `<input type="number">` or any focusable text field inside the exercise screen where sets are logged (`/session/:id/exercise/:key`).** Steppers only. This is a testable assertion — write a test for it. **Amendment (M5):** this rule scopes to the set-logging screen itself, matching prd.md §A3.3.1's own literal wording ("no keyboard is reachable from *this screen*"), not literally every route nested under `/session/*`. The Swap sheet (§A3.4) and Add-exercise (§A3.5) explicitly mock up a "Search…" text box each — those two screens get a real text input for tier-2/full-library search. The no-input test stays scoped to the single-exercise screen's component only. **Amendment (UX refactor):** the set-logging screen moved from `/session/:id` to `/session/:id/exercise/:key` when the exercise list (§A3.3) became the session's landing screen — the rule and its test moved with it, unchanged in substance.
 2. Minimum tap target 48×48 px. Set-confirm targets 64 px tall.
 3. Dark theme by default. Gym lighting is bad and screens are read at arm's length.
 4. Rest timer is a passive display, never a modal, never blocking.
-5. `/week` must render coverage and the pain strip in a single scroll view. They may not be separated into tabs or routes.
-6. No component in v1 may render a weight value or any aggregation spanning more than 7 days. Enforce with a lint rule or a shared guarded selector.
+5. **Amendment (UX refactor):** the old "Week View" screen (`/week`) — coverage numbers and the pain strip together, never split into tabs — is itself now split into two bottom-nav tabs, Coverage (`/coverage`) and Week Plan (`/week`). This rule's *spirit* survives at the Coverage level: Coverage's own muscle table, volume line, and pain strip still render in one scroll view, never their own sub-tabs. Week Plan is a genuinely different screen (a Mon–Sat grid), not a further split of Coverage's content.
+6. ~~No component in v1 may render a weight value or any aggregation spanning more than 7 days.~~ **Moot as of the UX refactor** — weight isn't tracked at all now, so there's no weight value anywhere in the codebase to guard against rendering. The "no aggregation spanning more than 7 days" half still holds for everything else (Coverage, Week Plan) — both are single-week views by design, with no multi-week chart anywhere.
 
 ## B7. Build order
 

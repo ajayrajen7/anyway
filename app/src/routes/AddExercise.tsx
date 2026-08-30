@@ -8,7 +8,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import SheetShell from '../components/SheetShell';
 import { searchExercisesOffline } from '../lib/exerciseCache';
 import { addExercise } from '../lib/overlay';
-import type { RunnerOutletContext } from './SessionRunner';
+import type { RunnerOutletContext } from '../lib/session';
 import type { Exercise } from '../lib/types';
 
 export default function AddExercise() {

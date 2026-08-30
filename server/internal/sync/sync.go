@@ -1,7 +1,6 @@
 // Package sync implements the write side of every outbox entity the client
 // produces (docs/architecture.md §B2's outbox, drained by app/src/lib/sync.ts
-// — M9) plus GET /api/weigh-ins' read, which is gated by the Vault
-// (server/internal/settings).
+// — M9).
 //
 // Each entity here is idempotent in the exact sense §B5 promises: replaying
 // the same payload — a retried sync POST, or the same outbox row drained
@@ -145,47 +144,21 @@ func Cardio(ctx context.Context, conn execer, p CardioPayload) error {
 	return err
 }
 
-// --- weigh_in ---
+// --- steps_log ---
 
-type WeighInPayload struct {
-	Date     string  `json:"date"`
-	WeightKg float64 `json:"weight_kg"`
+// StepsPayload is a real daily count, not presence-only (mirrors
+// protein_logs' shape, not mobility_logs'; see app/src/lib/dailyLogs.ts).
+type StepsPayload struct {
+	Date  string `json:"date"`
+	Steps int    `json:"steps"`
 }
 
-// WeighIn is a write-always-allowed upsert (docs/architecture.md §B5: "write
-// always allowed" — only the *read*, GET /api/weigh-ins, is Vault-gated).
-func WeighIn(ctx context.Context, conn execer, p WeighInPayload) error {
+func Steps(ctx context.Context, conn execer, p StepsPayload) error {
 	_, err := conn.ExecContext(ctx, `
-		INSERT INTO weigh_ins (date, weight_kg) VALUES (?, ?)
-		ON CONFLICT(date) DO UPDATE SET weight_kg = excluded.weight_kg
-	`, p.Date, p.WeightKg)
+		INSERT INTO steps_logs (date, steps) VALUES (?, ?)
+		ON CONFLICT(date) DO UPDATE SET steps = excluded.steps
+	`, p.Date, p.Steps)
 	return err
-}
-
-type WeighInRow struct {
-	Date     string  `json:"date"`
-	WeightKg float64 `json:"weight_kg"`
-}
-
-// ListWeighIns backs GET /api/weigh-ins — the caller (internal/api) is
-// responsible for calling settings.VaultUnlocked first and never reaching
-// here before it returns true.
-func ListWeighIns(ctx context.Context, conn *sql.DB) ([]WeighInRow, error) {
-	rows, err := conn.QueryContext(ctx, `SELECT date, weight_kg FROM weigh_ins ORDER BY date`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := []WeighInRow{}
-	for rows.Next() {
-		var r WeighInRow
-		if err := rows.Scan(&r.Date, &r.WeightKg); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
 }
 
 // --- batch drain (POST /api/sync) ---
@@ -265,12 +238,12 @@ func dispatch(ctx context.Context, conn *sql.DB, e Entry) error {
 			return fmt.Errorf("decode cardio_log payload: %w", err)
 		}
 		return Cardio(ctx, conn, p)
-	case "weigh_in":
-		var p WeighInPayload
+	case "steps_log":
+		var p StepsPayload
 		if err := json.Unmarshal(e.Payload, &p); err != nil {
-			return fmt.Errorf("decode weigh_in payload: %w", err)
+			return fmt.Errorf("decode steps_log payload: %w", err)
 		}
-		return WeighIn(ctx, conn, p)
+		return Steps(ctx, conn, p)
 	default:
 		return fmt.Errorf("unknown outbox entity %q", e.Entity)
 	}

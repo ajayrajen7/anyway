@@ -18,7 +18,6 @@ import (
 	"github.com/ajayrajen7/anyway/server/internal/export"
 	"github.com/ajayrajen7/anyway/server/internal/phase"
 	"github.com/ajayrajen7/anyway/server/internal/seed"
-	"github.com/ajayrajen7/anyway/server/internal/settings"
 	syncpkg "github.com/ajayrajen7/anyway/server/internal/sync"
 	"github.com/ajayrajen7/anyway/server/internal/today"
 )
@@ -59,9 +58,9 @@ func NewRouter(conn *sql.DB, token string) chi.Router {
 		r.Get("/exercises", listExercises(conn))
 		r.Get("/programme", getProgramme(conn)) // M8 amendment to §B5 — see memory.md
 		r.Post("/morning-check", postMorningCheck(conn))
-		r.Post("/weigh-ins", postWeighIn(conn))
-		r.Get("/weigh-ins", getWeighIns(conn)) // 423 Locked before start+84d — M9 (the Vault)
 		r.Post("/protein", postProtein(conn))
+		// UX refactor: a daily step count, alongside protein — see memory.md.
+		r.Post("/steps", postSteps(conn))
 		// Not in §B5's original list — a gap noted in M7's memory.md (the
 		// client has logged mobility since M7 with nowhere real to sync it
 		// to). Added here in M9 alongside the rest of the sync surface.
@@ -76,7 +75,7 @@ func NewRouter(conn *sql.DB, token string) chi.Router {
 		// user-facing benefit — out of v1 scope. See memory.md (M9).
 		r.Get("/week", notImplemented)
 		r.Post("/sync", postSync(conn))
-		r.Get("/export", getExport(conn)) // M10 — full JSON dump, weigh_ins omitted while the Vault is locked
+		r.Get("/export", getExport(conn)) // M10 — full JSON dump of every table
 	})
 
 	return r
@@ -215,7 +214,7 @@ func pathInt64(w http.ResponseWriter, r *http.Request, param string) (int64, boo
 // --- M9: sync surface (outbox drain) ---
 //
 // Every handler below is the receiving side of exactly one outbox entity
-// (see app/src/lib/outbox.ts, dailyLogs.ts, morningCheck.ts, weighIn.ts) and
+// (see app/src/lib/outbox.ts, dailyLogs.ts, morningCheck.ts) and
 // is also reachable directly at its own §B5 route for parity with the spec
 // and manual/curl testing — but the frontend never calls these directly; it
 // always goes through POST /api/sync, which dispatches the same
@@ -326,47 +325,20 @@ func postCardio(conn *sql.DB) http.HandlerFunc {
 	}
 }
 
-// postWeighIn implements POST /api/weigh-ins — a write, always allowed
-// regardless of Vault state (docs/architecture.md §B5).
-func postWeighIn(conn *sql.DB) http.HandlerFunc {
+func postSteps(conn *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var p syncpkg.WeighInPayload
+		var p syncpkg.StepsPayload
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			writeJSONError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := syncpkg.WeighIn(r.Context(), conn, p); err != nil {
+		if err := syncpkg.Steps(r.Context(), conn, p); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
-
-// getWeighIns implements GET /api/weigh-ins — the Vault (prd.md §A4): 423
-// Locked before programme_start_date + 84 days, enforced here server-side
-// (never trust a client to just not ask). See server/internal/settings.
-func getWeighIns(conn *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		unlocked, err := settings.VaultUnlocked(r.Context(), conn, time.Now())
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if !unlocked {
-			writeJSONError(w, http.StatusLocked, errNotUnlocked)
-			return
-		}
-		rows, err := syncpkg.ListWeighIns(r.Context(), conn)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err)
-			return
-		}
-		json.NewEncoder(w).Encode(rows)
-	}
-}
-
-var errNotUnlocked = errors.New("locked — not yet 84 days into the programme")
 
 // postSync implements POST /api/sync — the batched outbox drain (§B5). The
 // body is a JSON array of {entity, entity_id, payload}; the response is a
@@ -386,8 +358,7 @@ func postSync(conn *sql.DB) http.HandlerFunc {
 }
 
 // getExport implements GET /api/export (M10) — a full JSON dump of every
-// table, for the user's own portability/backup. See internal/export's doc
-// comment for why `weigh_ins` is the one table gated by the Vault here too.
+// table, for the user's own portability/backup.
 func getExport(conn *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		dump, err := export.Build(r.Context(), conn, time.Now())

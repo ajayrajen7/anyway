@@ -1,35 +1,44 @@
 import { Route, Routes } from 'react-router-dom';
+import AppShell from './components/AppShell';
 import AddExercise from './routes/AddExercise';
+import Coverage from './routes/Coverage';
 import MorningCheck from './routes/MorningCheck';
-import SessionRunner from './routes/SessionRunner';
+import SessionExercise from './routes/SessionExercise';
+import SessionOverview from './routes/SessionOverview';
 import SessionSummary from './routes/SessionSummary';
 import Settings from './routes/Settings';
 import SwapSheet from './routes/SwapSheet';
 import Today from './routes/Today';
-import Week from './routes/Week';
-import WeighIn from './routes/WeighIn';
+import WeekPlan from './routes/WeekPlan';
 
-// Route map — A3. Screens are stubs until their milestone (see docs/implementation-plan.md).
+// Route map — A3, reshaped by the UX refactor around a persistent bottom
+// nav (Today / Coverage / Week Plan — see AppShell.tsx). Everything else —
+// the session flow, morning check, settings — stays outside that shell:
+// full-screen flows you enter and leave, not places to idly switch tabs.
 //
-// Swap and Add-exercise are *sheets* (§A3.4/§A3.5) — nested under
-// /session/:id so SessionRunner never unmounts while one is open. That's
-// not just fidelity to "sheet" styling: it's what keeps SessionRunner's own
-// state (which exercise you're on) intact across the round trip, with no
-// need to persist/restore position via the URL or localStorage (see M5 in
-// memory.md). Session summary (`/done`) is a real full-screen navigation —
-// the session is over, there's nothing left to preserve.
+// The session's exercise-list (`/session/:id`) and single-exercise screen
+// (`/session/:id/exercise/:key`) are each other's siblings, not nested —
+// "start from any exercise" means real navigation between them, not a
+// sequential Next/Skip walk. Add is a sheet nested under the list (reached
+// from there); Swap is a sheet nested under the single-exercise screen
+// (reached from either the list, in one navigation, or the exercise screen
+// itself) — see docs/architecture.md §B6.1's amendment and memory.md.
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Today />} />
+      <Route element={<AppShell />}>
+        <Route path="/" element={<Today />} />
+        <Route path="/coverage" element={<Coverage />} />
+        <Route path="/week" element={<WeekPlan />} />
+      </Route>
       <Route path="/check" element={<MorningCheck />} />
-      <Route path="/weigh" element={<WeighIn />} />
-      <Route path="/session/:id" element={<SessionRunner />}>
-        <Route path="swap/:slotId" element={<SwapSheet />} />
+      <Route path="/session/:id" element={<SessionOverview />}>
         <Route path="add" element={<AddExercise />} />
       </Route>
+      <Route path="/session/:id/exercise/:key" element={<SessionExercise />}>
+        <Route path="swap/:slotId" element={<SwapSheet />} />
+      </Route>
       <Route path="/session/:id/done" element={<SessionSummary />} />
-      <Route path="/week" element={<Week />} />
       <Route path="/settings" element={<Settings />} />
     </Routes>
   );

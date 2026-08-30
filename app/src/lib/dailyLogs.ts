@@ -1,10 +1,6 @@
-// Protein / mobility / cardio (prd.md §A3.2, §A3.6) — offline-first like
-// everything else logged so far (§B2): each write goes to its Dexie table
-// + an outbox entry together. None of these have a real backend endpoint
-// yet — `POST /api/protein` and `POST /api/cardio` stay 501 stubs, and
-// architecture.md §B5 never actually lists a mobility endpoint at all (a
-// gap in that doc, noted in memory.md) — all three wait for M9's sync
-// worker like every other mutation so far.
+// Protein / mobility / cardio / steps (prd.md §A3.2, §A3.6) — offline-first
+// like everything else logged so far (§B2): each write goes to its Dexie
+// table + an outbox entry together.
 import { db } from './db';
 import type { CardioLog } from './types';
 
@@ -69,4 +65,17 @@ export async function logCardio(date: string, modality: string, durationMin: num
 
 export async function clearCardioLog(date: string, modality: string): Promise<void> {
   await db.cardioLogs.where('[date+modality]').equals([date, modality]).delete();
+}
+
+// --- Steps — a real daily count, like protein (not presence-only like mobility) ---
+
+export async function getStepsLog(date: string) {
+  return db.stepsLogs.get(date);
+}
+
+export async function logSteps(date: string, steps: number): Promise<void> {
+  await db.transaction('rw', db.stepsLogs, db.outbox, async () => {
+    await db.stepsLogs.put({ date, steps });
+    await appendOutbox('steps_log', date, { date, steps });
+  });
 }

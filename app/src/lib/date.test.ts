@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAfter6pm, isSunday, localDateKey, parseDateKey } from './date';
+import { isAfter6pm, localDateKey, parseDateKey } from './date';
 
 describe('localDateKey', () => {
   it('formats a local date as YYYY-MM-DD', () => {
@@ -26,16 +26,6 @@ describe('isAfter6pm', () => {
   it('is true at and after 18:00', () => {
     expect(isAfter6pm(new Date(2026, 0, 5, 18, 0))).toBe(true);
     expect(isAfter6pm(new Date(2026, 0, 5, 23, 30))).toBe(true);
-  });
-});
-
-describe('isSunday', () => {
-  it('is true on a Sunday', () => {
-    expect(isSunday(new Date(2026, 0, 4))).toBe(true); // Jan 4, 2026 is a Sunday
-  });
-  it('is false on any other day', () => {
-    expect(isSunday(new Date(2026, 0, 5))).toBe(false); // Monday
-    expect(isSunday(new Date(2026, 0, 10))).toBe(false); // Saturday
   });
 });
 
