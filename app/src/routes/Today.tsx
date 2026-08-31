@@ -6,7 +6,16 @@
 // UX refactor: the header shows the weekday name (Monday..Sunday), never
 // the phase's own day-template name ("Lower A"/"Lower B") — the owner
 // doesn't think in phase-day labels day to day, they think in weekdays.
-import { useEffect, useState } from 'react';
+//
+// Whole-day "Done for today" (post-M12 follow-up): once every part of the
+// day is filled in, the screen collapses to one confirmation instead of
+// staying fully expanded forever — reusing Week Plan's own definition of
+// "done" (src/lib/week.ts#computeDayCompletion) rather than inventing a
+// second one, so the two screens never disagree about what counts. See
+// memory.md's "how do I save a day" / whole-day-Done entries for the full
+// history — a previous cardio/mobility-only version of this collapse used
+// its own local, unpersisted flag and was extended+unified here.
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, Pill, primaryButtonClass } from '../components/ui';
 import { ApiError, getToday } from '../lib/api';
@@ -28,6 +37,7 @@ import { cacheExerciseLibrary } from '../lib/exerciseCache';
 import { MOBILITY_ITEMS } from '../lib/mobilityItems';
 import { cacheProgramme } from '../lib/programmeCache';
 import { cacheToday } from '../lib/todayCache';
+import { computeDayCompletion, type DayKind } from '../lib/week';
 import type { TodayResponse } from '../lib/types';
 
 type State =
@@ -77,24 +87,104 @@ export default function Today() {
 function TodayCard({ data }: { data: TodayResponse }) {
   const { day_template: dayTemplate, weekday, session, slots, date } = data;
   const weekdayName = WEEKDAY_NAMES[weekday] ?? dayTemplate.name;
+  // Keyed by date: a fresh calendar day means fresh "done" state, not
+  // whatever the previous day's collapse happened to be.
+  return (
+    <DayBody
+      key={date}
+      kind={dayTemplate.kind}
+      date={date}
+      weekday={weekday}
+      weekdayName={weekdayName}
+      session={session}
+      slotCount={slots.length}
+    />
+  );
+}
 
-  if (dayTemplate.kind === 'rest') {
+function DayBody({
+  kind,
+  date,
+  weekday,
+  weekdayName,
+  session,
+  slotCount,
+}: {
+  kind: DayKind;
+  date: string;
+  weekday: number;
+  weekdayName: string;
+  session: TodayResponse['session'];
+  slotCount: number;
+}) {
+  const config = CARDIO_CONFIG[weekday];
+  const [signals, setSignals] = useState<{ mainActivityDone: boolean; proteinHit: boolean; stepsLogged: boolean } | undefined>(undefined);
+  // Lets you get back to the full, editable layout after it's collapsed —
+  // e.g. to adjust a number you mis-tapped. Resets to false on remount (a
+  // fresh visit to Today always leads with the collapsed confirmation if
+  // the day is already done, which is the whole point of this).
+  const [forceExpanded, setForceExpanded] = useState(false);
+
+  // Re-derives "done" from whatever's actually saved in Dexie right now —
+  // never a flag of its own to fall out of sync. Passed to every row below
+  // as onChange, so checking the last box collapses the screen immediately,
+  // not just on the next reload.
+  const refresh = useCallback(() => {
+    Promise.all([
+      getProteinLog(date),
+      getStepsLog(date),
+      kind === 'cardio_mobility' && config ? getCardioLog(date, config.modality) : Promise.resolve(undefined),
+      kind === 'cardio_mobility' ? getMobilityLog(date) : Promise.resolve(undefined),
+    ]).then(([protein, steps, cardio, mobility]) => {
+      const mainActivityDone =
+        kind === 'lifting' ? session?.status === 'completed' : kind === 'cardio_mobility' ? (!config || !!cardio) && !!mobility : false;
+      setSignals({ mainActivityDone, proteinHit: protein?.hit === true, stepsLogged: !!steps });
+    });
+  }, [date, kind, config, session]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  if (!signals) {
+    return <p className="text-sm text-ink-muted">Loading…</p>;
+  }
+
+  const completion = computeDayCompletion(date, kind, signals);
+  const dayDone = completion.done >= completion.total;
+
+  if (dayDone && !forceExpanded) {
     return (
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-semibold">{weekdayName}</h1>
-        <p className="text-sm text-ink-muted">Flat walk only. Not training — just movement.</p>
-        <StepsRow date={date} />
-        <ProteinRow date={date} />
+        <Card className="flex items-center justify-between">
+          <Pill tone="accent">✓ Done for today</Pill>
+          <button type="button" onClick={() => setForceExpanded(true)} className="text-sm text-accent underline">
+            Edit
+          </button>
+        </Card>
       </div>
     );
   }
 
-  if (dayTemplate.kind === 'cardio_mobility') {
+  if (kind === 'rest') {
     return (
       <div className="flex flex-col gap-3">
-        <CardioMobilityDay date={date} weekday={weekday} name={weekdayName} />
-        <StepsRow date={date} />
-        <ProteinRow date={date} />
+        <h1 className="text-2xl font-semibold">{weekdayName}</h1>
+        <p className="text-sm text-ink-muted">Flat walk only. Not training — just movement.</p>
+        <StepsRow date={date} onChange={refresh} />
+        <ProteinRow date={date} onChange={refresh} />
+      </div>
+    );
+  }
+
+  if (kind === 'cardio_mobility') {
+    return (
+      <div className="flex flex-col gap-3">
+        <h1 className="text-2xl font-semibold">{weekdayName}</h1>
+        <CardioMobilityRows date={date} weekday={weekday} onChange={refresh} />
+        <StepsRow date={date} onChange={refresh} />
+        <ProteinRow date={date} onChange={refresh} />
       </div>
     );
   }
@@ -107,7 +197,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
       <Card>
         <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Today's session</p>
         <p className="mt-2 text-sm text-ink-muted">
-          {slots.length} exercises{minutes ? ` · ~${minutes} min` : ''}
+          {slotCount} exercises{minutes ? ` · ~${minutes} min` : ''}
         </p>
         {session?.status === 'completed' ? (
           <div className="mt-4 flex items-center justify-between">
@@ -125,8 +215,8 @@ function TodayCard({ data }: { data: TodayResponse }) {
         )}
       </Card>
       <MobilityRow date={date} />
-      <StepsRow date={date} />
-      <ProteinRow date={date} />
+      <StepsRow date={date} onChange={refresh} />
+      <ProteinRow date={date} onChange={refresh} />
     </div>
   );
 }
@@ -136,7 +226,10 @@ function TodayCard({ data }: { data: TodayResponse }) {
 // manual entry is fine"). Capped at 10 since that's the stated routine
 // length; every adjust writes/upserts a row immediately, exactly like
 // StepsRow below (no separate "clear" — 0 min is itself a valid logged
-// value, not distinct from "not logged").
+// value, not distinct from "not logged"). Not part of a lifting day's
+// whole-day "done" grading (matches Week Plan's own definition — a lifting
+// day's "3" is session/protein/steps, mobility isn't one of them), so it
+// has no onChange into the day-level refresh.
 const MOBILITY_MAX_MINUTES = 10;
 
 function MobilityRow({ date }: { date: string }) {
@@ -185,7 +278,7 @@ function MobilityRow({ date }: { date: string }) {
 // the day and found nothing there — shown all day now, same as Steps/Mobility.
 const PROTEIN_INCREMENT_GRAMS = 10;
 
-function ProteinRow({ date }: { date: string }) {
+function ProteinRow({ date, onChange }: { date: string; onChange: () => void }) {
   const [grams, setGrams] = useState<number | undefined>(undefined); // undefined = loading
 
   useEffect(() => {
@@ -202,6 +295,7 @@ function ProteinRow({ date }: { date: string }) {
     const next = Math.max(0, (grams ?? 0) + delta);
     setGrams(next);
     await logProteinGrams(date, next);
+    onChange();
   }
 
   if (grams === undefined) return null;
@@ -226,7 +320,7 @@ function ProteinRow({ date }: { date: string }) {
 // a target-hit yes/no (no step target exists anywhere in the spec).
 const STEPS_INCREMENT = 500;
 
-function StepsRow({ date }: { date: string }) {
+function StepsRow({ date, onChange }: { date: string; onChange: () => void }) {
   const [steps, setSteps] = useState<number | undefined>(undefined); // undefined = loading
 
   useEffect(() => {
@@ -243,6 +337,7 @@ function StepsRow({ date }: { date: string }) {
     const next = Math.max(0, (steps ?? 0) + delta);
     setSteps(next);
     await logSteps(date, next);
+    onChange();
   }
 
   if (steps === undefined) return null;
@@ -264,30 +359,16 @@ function StepsRow({ date }: { date: string }) {
 }
 
 // A3.6 — checkbox + duration stepper for the day's cardio modality, and a
-// "Full mobility" checkbox with an expandable (unpersisted) checklist.
-// "Done for today" is derived from those two checkboxes, not a separate
-// tap or a separate saved flag — each checkbox already persists the
-// instant it's tapped (logCardio/logMobility), same as every other
-// checkbox/stepper in this app; there's nothing extra to "save". A
-// previous version had a third, explicit "Done" button whose collapsed
-// state lived only in local React state and was forgotten on reload —
-// reported live as "how do I save a day, that button is missing" once a
-// reopen showed the checkboxes again instead of the confirmation. Fixed by
-// removing the separate flag entirely: minimal path is still 2 taps
-// (cardio checkbox, mobility checkbox), and it now stays "done" correctly
-// across any reload, reopen, or deploy, since it's reading the same
-// already-saved data every time — no time-of-day logic involved anywhere.
-function CardioMobilityDay({ date, weekday, name }: { date: string; weekday: number; name: string }) {
+// "Full mobility" checkbox with an expandable (unpersisted) checklist. No
+// collapse of its own anymore — DayBody owns the single whole-day "Done for
+// today" state now, driven by this component's onChange the same as every
+// other row.
+function CardioMobilityRows({ date, weekday, onChange }: { date: string; weekday: number; onChange: () => void }) {
   const config = CARDIO_CONFIG[weekday];
   const [cardioDone, setCardioDone] = useState<boolean | undefined>(undefined);
   const [minutes, setMinutes] = useState(config?.defaultMinutes ?? 20);
   const [mobilityDone, setMobilityDone] = useState<boolean | undefined>(undefined);
   const [showChecklist, setShowChecklist] = useState(false);
-  // Lets you get back to the checkboxes after they've collapsed — e.g. to
-  // uncheck something you tapped by mistake. Resets to false on remount
-  // (a fresh visit to Today always shows the collapsed "Done" view first
-  // if both are already checked, exactly what was missing before).
-  const [forceExpanded, setForceExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,6 +394,7 @@ function CardioMobilityDay({ date, weekday, name }: { date: string; weekday: num
       await logCardio(date, config.modality, minutes);
       setCardioDone(true);
     }
+    onChange();
   }
 
   async function adjustMinutes(delta: number) {
@@ -332,31 +414,15 @@ function CardioMobilityDay({ date, weekday, name }: { date: string; weekday: num
       await logMobility(date);
       setMobilityDone(true);
     }
+    onChange();
   }
 
   if (cardioDone === undefined || mobilityDone === undefined) {
     return <p className="text-sm text-ink-muted">Loading…</p>;
   }
 
-  const bothDone = (!config || cardioDone) && mobilityDone;
-  if (bothDone && !forceExpanded) {
-    return (
-      <div className="flex flex-col gap-3">
-        <h1 className="text-2xl font-semibold">{name}</h1>
-        <Card className="flex items-center justify-between">
-          <Pill tone="accent">✓ Done for today</Pill>
-          <button type="button" onClick={() => setForceExpanded(true)} className="text-sm text-accent underline">
-            Edit
-          </button>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-3">
-      <h1 className="text-2xl font-semibold">{name}</h1>
-
+    <>
       {config && (
         <Card className="flex items-center justify-between">
           <label className="flex items-center gap-2 text-sm text-ink">
@@ -387,7 +453,7 @@ function CardioMobilityDay({ date, weekday, name }: { date: string; weekday: num
         </div>
         {showChecklist && <MobilityChecklist />}
       </Card>
-    </div>
+    </>
   );
 }
 

@@ -221,7 +221,12 @@ describe('Today screen', () => {
     expect(stored?.duration_min).toBe(25);
   });
 
-  it('checking the cardio and mobility boxes collapses to "Done for today" automatically — no separate Done tap', async () => {
+  it('checking cardio, mobility, protein, and steps collapses to "Done for today" automatically — no separate Done tap', async () => {
+    // Whole-day unification: cardio+mobility alone used to be enough (a
+    // component-local "bothDone" flag). Now Today reuses Week Plan's own
+    // computeDayCompletion, so a cardio_mobility day's "done" is all four
+    // signals — cardio, mobility, protein, steps — same as every other
+    // screen that grades the day.
     const user = userEvent.setup();
     getTodayMock.mockResolvedValue({
       date: '2026-01-07',
@@ -232,8 +237,15 @@ describe('Today screen', () => {
     } satisfies TodayResponse);
     renderToday();
 
-    await user.click(await screen.findByRole('checkbox', { name: 'Cross trainer' })); // tap 1
-    await user.click(screen.getByRole('checkbox', { name: /Full mobility/ })); // tap 2 — collapses on its own
+    await user.click(await screen.findByRole('checkbox', { name: 'Cross trainer' }));
+    await user.click(screen.getByRole('checkbox', { name: /Full mobility/ }));
+    expect(screen.queryByText('✓ Done for today')).not.toBeInTheDocument(); // protein/steps still missing
+
+    const proteinIncrease = screen.getByRole('button', { name: 'Increase protein grams' });
+    for (let i = 0; i < 12; i++) {
+      await user.click(proteinIncrease); // 12 × 10g = 120g, hits the target
+    }
+    await user.click(screen.getByRole('button', { name: 'Increase steps' })); // last tap — collapses on its own
 
     expect(await screen.findByText('✓ Done for today')).toBeInTheDocument();
     expect(await db.mobilityLogs.get('2026-01-07')).toEqual({ date: '2026-01-07', duration_min: 10 });
@@ -257,6 +269,11 @@ describe('Today screen', () => {
 
     await user.click(await screen.findByRole('checkbox', { name: 'Cross trainer' }));
     await user.click(screen.getByRole('checkbox', { name: /Full mobility/ }));
+    const proteinIncrease = screen.getByRole('button', { name: 'Increase protein grams' });
+    for (let i = 0; i < 12; i++) {
+      await user.click(proteinIncrease);
+    }
+    await user.click(screen.getByRole('button', { name: 'Increase steps' }));
     await screen.findByText('✓ Done for today');
     unmount();
 
@@ -278,10 +295,79 @@ describe('Today screen', () => {
 
     await user.click(await screen.findByRole('checkbox', { name: 'Cross trainer' }));
     await user.click(screen.getByRole('checkbox', { name: /Full mobility/ }));
+    const proteinIncrease = screen.getByRole('button', { name: 'Increase protein grams' });
+    for (let i = 0; i < 12; i++) {
+      await user.click(proteinIncrease);
+    }
+    await user.click(screen.getByRole('button', { name: 'Increase steps' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
     expect(await screen.findByRole('checkbox', { name: 'Cross trainer' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /Full mobility/ })).toBeChecked();
+  });
+
+  it('a lifting day collapses to "Done for today" only once session, protein, and steps are all logged', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue({
+      ...liftingDay,
+      session: { ...liftingDay.session!, status: 'completed' },
+    });
+    renderToday();
+
+    await screen.findByText('✓ Session complete'); // protein/steps still missing — stays expanded
+    expect(screen.queryByText('✓ Done for today')).not.toBeInTheDocument();
+
+    const proteinIncrease = await screen.findByRole('button', { name: 'Increase protein grams' });
+    for (let i = 0; i < 12; i++) {
+      await user.click(proteinIncrease); // 12 × 10g = 120g, hits the target
+    }
+    await user.click(screen.getByRole('button', { name: 'Increase steps' }));
+
+    expect(await screen.findByText('✓ Done for today')).toBeInTheDocument();
+    expect(screen.queryByText('✓ Session complete')).not.toBeInTheDocument();
+  });
+
+  it('Edit on a fully-done lifting day returns to the full layout, session card included', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue({
+      ...liftingDay,
+      session: { ...liftingDay.session!, status: 'completed' },
+    });
+    renderToday();
+
+    await screen.findByText('✓ Session complete');
+    const proteinIncrease = await screen.findByRole('button', { name: 'Increase protein grams' });
+    for (let i = 0; i < 12; i++) {
+      await user.click(proteinIncrease);
+    }
+    await user.click(screen.getByRole('button', { name: 'Increase steps' }));
+    await screen.findByText('✓ Done for today');
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(await screen.findByText('✓ Session complete')).toBeInTheDocument();
+    expect(screen.getByText('Mobility')).toBeInTheDocument();
+  });
+
+  it('a rest day collapses to "Done for today" once protein and steps are logged (no main-activity slot)', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue({
+      date: '2026-01-11',
+      weekday: 7,
+      day_template: { id: 7, name: 'Off', kind: 'rest' },
+      session: null,
+      slots: [],
+    } satisfies TodayResponse);
+    renderToday();
+
+    await screen.findByText(/flat walk only/i);
+    const proteinIncrease = await screen.findByRole('button', { name: 'Increase protein grams' });
+    for (let i = 0; i < 12; i++) {
+      await user.click(proteinIncrease);
+    }
+    await user.click(screen.getByRole('button', { name: 'Increase steps' }));
+
+    expect(await screen.findByText('✓ Done for today')).toBeInTheDocument();
   });
 
   it('View expands the 12-item mobility checklist (ticks are not persisted)', async () => {
