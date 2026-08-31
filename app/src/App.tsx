@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import AppShell from './components/AppShell';
+import UpdateBanner from './components/UpdateBanner';
 import AddExercise from './routes/AddExercise';
 import Coverage from './routes/Coverage';
 import MorningCheck from './routes/MorningCheck';
@@ -25,21 +26,28 @@ import WeekPlan from './routes/WeekPlan';
 // itself) — see docs/architecture.md §B6.1's amendment and memory.md.
 export default function App() {
   return (
-    <Routes>
-      <Route element={<AppShell />}>
-        <Route path="/" element={<Today />} />
-        <Route path="/coverage" element={<Coverage />} />
-        <Route path="/week" element={<WeekPlan />} />
-      </Route>
-      <Route path="/check" element={<MorningCheck />} />
-      <Route path="/session/:id" element={<SessionOverview />}>
-        <Route path="add" element={<AddExercise />} />
-      </Route>
-      <Route path="/session/:id/exercise/:key" element={<SessionExercise />}>
-        <Route path="swap/:slotId" element={<SwapSheet />} />
-      </Route>
-      <Route path="/session/:id/done" element={<SessionSummary />} />
-      <Route path="/settings" element={<Settings />} />
-    </Routes>
+    <>
+      {/* Mounted once, above every route — see UpdateBanner.tsx for why a
+          detected update shows a manual "Refresh" prompt here instead of
+          reloading the page automatically (that silently destroyed
+          in-progress set data before the fix). */}
+      <UpdateBanner />
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route path="/" element={<Today />} />
+          <Route path="/coverage" element={<Coverage />} />
+          <Route path="/week" element={<WeekPlan />} />
+        </Route>
+        <Route path="/check" element={<MorningCheck />} />
+        <Route path="/session/:id" element={<SessionOverview />}>
+          <Route path="add" element={<AddExercise />} />
+        </Route>
+        <Route path="/session/:id/exercise/:key" element={<SessionExercise />}>
+          <Route path="swap/:slotId" element={<SwapSheet />} />
+        </Route>
+        <Route path="/session/:id/done" element={<SessionSummary />} />
+        <Route path="/settings" element={<Settings />} />
+      </Routes>
+    </>
   );
 }
