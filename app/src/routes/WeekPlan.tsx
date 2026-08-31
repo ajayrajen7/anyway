@@ -150,6 +150,11 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
         </button>
       </div>
 
+      {/* Every row links somewhere: the real session if one's already
+          cached (today, or an earlier day this week already opened as
+          Today), otherwise a read-only preview of what's prescribed
+          (/day/:date, sourced from the offline programme cache — no
+          session needed to look, just to log). */}
       <ul className="mt-4 flex flex-col gap-2">
         {state.days.map((day, i) => {
           const rowContent = (
@@ -169,22 +174,13 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
           );
           return (
             <li key={day.date}>
-              {day.sessionId != null ? (
-                <Link to={`/session/${day.sessionId}`}>
-                  <Card className="flex items-center justify-between">{rowContent}</Card>
-                </Link>
-              ) : (
+              <Link to={day.sessionId != null ? `/session/${day.sessionId}` : `/day/${day.date}`}>
                 <Card className="flex items-center justify-between">{rowContent}</Card>
-              )}
+              </Link>
             </li>
           );
         })}
       </ul>
-      {/* Only a day that's already been opened as "Today" (this one, or an
-          earlier lifting day this week) has an exercise list to jump to —
-          a day not yet reached has no session created for it yet, so it
-          isn't a link. Cardio/mobility and rest days never link at all;
-          they live entirely on Today.tsx, not a separate screen. */}
 
       <Link to="/coverage" className="mt-4 block text-sm text-accent underline">
         View coverage →

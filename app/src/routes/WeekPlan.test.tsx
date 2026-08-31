@@ -8,7 +8,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 import WeekPlan from './WeekPlan';
 import { db } from '../lib/db';
-import { localDateKey } from '../lib/date';
+import { localDateKey, parseDateKey } from '../lib/date';
 import { weekBoundsFor } from '../lib/week';
 import type { ProgrammeResponse } from '../lib/types';
 
@@ -80,8 +80,11 @@ describe('Week Plan screen', () => {
     expect(screen.getByText('3 of 3')).toBeInTheDocument();
   });
 
-  it('links a lifting day to its exercise list once that day has been opened as Today, and leaves other days as plain rows', async () => {
+  it('links a lifting day to its session once opened as Today, and every other day to a read-only preview', async () => {
     const monday = weekBoundsFor(localDateKey()).start;
+    const mondayDate = parseDateKey(monday);
+    const tuesday = localDateKey(new Date(mondayDate.getFullYear(), mondayDate.getMonth(), mondayDate.getDate() + 1));
+    const wednesday = localDateKey(new Date(mondayDate.getFullYear(), mondayDate.getMonth(), mondayDate.getDate() + 2));
     const programme: ProgrammeResponse = {
       phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
       day_templates: [
@@ -106,11 +109,11 @@ describe('Week Plan screen', () => {
 
     const mondayLink = await screen.findByRole('link', { name: /Monday/ });
     expect(mondayLink).toHaveAttribute('href', '/session/42');
-    // Wednesday is cardio_mobility (no exercise-list screen at all) and
-    // Tuesday is a lifting day that hasn't been opened yet (no session
-    // cached) — neither should be a link.
-    expect(screen.getByText('Tuesday').closest('a')).toBeNull();
-    expect(screen.getByText('Wednesday').closest('a')).toBeNull();
+    // Tuesday (lifting, not yet opened) and Wednesday (cardio_mobility,
+    // no exercise-list screen at all) both fall back to the read-only
+    // preview, keyed by their own date — not a dead row.
+    expect(screen.getByRole('link', { name: /Tuesday/ })).toHaveAttribute('href', `/day/${tuesday}`);
+    expect(screen.getByRole('link', { name: /Wednesday/ })).toHaveAttribute('href', `/day/${wednesday}`);
   });
 
   it('navigates to the previous week and back', async () => {

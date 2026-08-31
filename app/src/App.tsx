@@ -3,6 +3,7 @@ import AppShell from './components/AppShell';
 import UpdateBanner from './components/UpdateBanner';
 import AddExercise from './routes/AddExercise';
 import Coverage from './routes/Coverage';
+import DayPreview from './routes/DayPreview';
 import MorningCheck from './routes/MorningCheck';
 import SessionExercise from './routes/SessionExercise';
 import SessionOverview from './routes/SessionOverview';
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/week" element={<WeekPlan />} />
         </Route>
         <Route path="/check" element={<MorningCheck />} />
+        <Route path="/day/:date" element={<DayPreview />} />
         <Route path="/session/:id" element={<SessionOverview />}>
           <Route path="add" element={<AddExercise />} />
         </Route>

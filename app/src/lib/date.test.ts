@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAfter6pm, localDateKey, parseDateKey } from './date';
+import { isAfter6pm, isoWeekday, localDateKey, parseDateKey } from './date';
 
 describe('localDateKey', () => {
   it('formats a local date as YYYY-MM-DD', () => {
@@ -41,5 +41,17 @@ describe('parseDateKey', () => {
     expect(d.getFullYear()).toBe(2026);
     expect(d.getMonth()).toBe(0);
     expect(d.getDate()).toBe(5);
+  });
+});
+
+describe('isoWeekday', () => {
+  it('numbers Monday..Saturday as 1..6', () => {
+    expect(isoWeekday('2026-01-05')).toBe(1); // Monday
+    expect(isoWeekday('2026-01-07')).toBe(3); // Wednesday
+    expect(isoWeekday('2026-01-10')).toBe(6); // Saturday
+  });
+
+  it('numbers Sunday as 7, not 0', () => {
+    expect(isoWeekday('2026-01-11')).toBe(7); // Sunday
   });
 });

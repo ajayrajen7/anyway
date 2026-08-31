@@ -25,3 +25,13 @@ export function parseDateKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number);
   return new Date(year, month - 1, day);
 }
+
+// ISO weekday (1=Mon..7=Sun) for a date key — matches day_templates.weekday's
+// own numbering (architecture.md §B3). Date#getDay() is 0=Sun..6=Sat, so
+// Sunday needs mapping to 7. (week.ts#weekBoundsFor has this same one-liner
+// inlined for its own Monday-of-week math — not worth a shared-helper
+// refactor of working code just to remove one duplicate line.)
+export function isoWeekday(key: string): number {
+  const day = parseDateKey(key).getDay();
+  return day === 0 ? 7 : day;
+}
