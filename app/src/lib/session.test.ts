@@ -56,6 +56,17 @@ describe('isSwipeLeft', () => {
     expect(isSwipeLeft(-10)).toBe(false);
     expect(isSwipeLeft(50)).toBe(false);
   });
+  // Real bug, reported live: a vertical scroll past a pending set row —
+  // with only modest horizontal thumb drift — was silently skipping it
+  // (a real session came back "0 done, 6 skipped" after data was actually
+  // entered for every set). Horizontal movement must dominate vertical.
+  it('is false when the movement is mostly vertical (a scroll), even past the X threshold', () => {
+    expect(isSwipeLeft(-100, 300)).toBe(false); // scrolled down, drifted left
+    expect(isSwipeLeft(-100, -300)).toBe(false); // scrolled up, drifted left
+  });
+  it('is still true for a real horizontal swipe with only incidental vertical movement', () => {
+    expect(isSwipeLeft(-100, 10)).toBe(true);
+  });
 });
 
 describe('computeSessionTotals', () => {

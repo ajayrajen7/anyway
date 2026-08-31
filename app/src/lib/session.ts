@@ -108,9 +108,19 @@ export interface RunnerOutletContext {
 
 // "Swipe row left → skipped" (§A3.3). A pure threshold check so the gesture
 // math is testable without simulating real touch/pointer events.
+//
+// Real bug fixed here: the original version only checked horizontal
+// distance, so an ordinary vertical scroll past a pending set row — with
+// even modest horizontal thumb drift, easily >80px over a long scroll on a
+// real phone — registered as a left-swipe and silently skipped the set.
+// Reported live: a real session came back "0 done, 6 skipped" after the
+// owner had actually entered data for every set. Requiring the horizontal
+// movement to *dominate* the vertical movement is the standard fix for
+// this exact swipe-vs-scroll ambiguity. deltaY defaults to 0 so existing
+// callers that only ever tracked X keep working unchanged.
 export const SWIPE_SKIP_THRESHOLD_PX = 80;
-export function isSwipeLeft(deltaX: number): boolean {
-  return deltaX <= -SWIPE_SKIP_THRESHOLD_PX;
+export function isSwipeLeft(deltaX: number, deltaY = 0): boolean {
+  return deltaX <= -SWIPE_SKIP_THRESHOLD_PX && Math.abs(deltaX) > Math.abs(deltaY);
 }
 
 // The session's exercise-list screen (UX refactor) shows a status per

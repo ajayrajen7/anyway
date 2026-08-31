@@ -276,7 +276,10 @@ function SetRow({
   onCommit: () => void;
   onSwipeSkip: () => void;
 }) {
-  const [dragStartX, setDragStartX] = useState<number | null>(null);
+  // Track both axes, not just X — see isSwipeLeft's own doc comment for the
+  // real bug this fixes: an ordinary vertical scroll past a pending row
+  // could carry >80px of horizontal thumb drift and silently skip it.
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
 
   if (row.status !== 'pending') {
     return (
@@ -297,13 +300,14 @@ function SetRow({
     <div
       data-testid={`set-row-${index}`}
       className="flex items-center justify-between rounded-2xl bg-surface px-3 py-4"
-      onPointerDown={(e) => setDragStartX(e.clientX)}
+      onPointerDown={(e) => setDragStart({ x: e.clientX, y: e.clientY })}
       onPointerUp={(e) => {
-        if (dragStartX != null && isSwipeLeft(e.clientX - dragStartX)) {
+        if (dragStart != null && isSwipeLeft(e.clientX - dragStart.x, e.clientY - dragStart.y)) {
           onSwipeSkip();
         }
-        setDragStartX(null);
+        setDragStart(null);
       }}
+      onPointerCancel={() => setDragStart(null)}
     >
       <span>Set {index + 1}</span>
 
