@@ -263,17 +263,31 @@ function StepsRow({ date }: { date: string }) {
   );
 }
 
-// A3.6 — checkbox + duration stepper for the day's cardio modality, a
-// "Full mobility" checkbox with an expandable (unpersisted) checklist, and
-// a Done button. Minimal path is 3 taps: cardio checkbox, mobility
-// checkbox, Done.
+// A3.6 — checkbox + duration stepper for the day's cardio modality, and a
+// "Full mobility" checkbox with an expandable (unpersisted) checklist.
+// "Done for today" is derived from those two checkboxes, not a separate
+// tap or a separate saved flag — each checkbox already persists the
+// instant it's tapped (logCardio/logMobility), same as every other
+// checkbox/stepper in this app; there's nothing extra to "save". A
+// previous version had a third, explicit "Done" button whose collapsed
+// state lived only in local React state and was forgotten on reload —
+// reported live as "how do I save a day, that button is missing" once a
+// reopen showed the checkboxes again instead of the confirmation. Fixed by
+// removing the separate flag entirely: minimal path is still 2 taps
+// (cardio checkbox, mobility checkbox), and it now stays "done" correctly
+// across any reload, reopen, or deploy, since it's reading the same
+// already-saved data every time — no time-of-day logic involved anywhere.
 function CardioMobilityDay({ date, weekday, name }: { date: string; weekday: number; name: string }) {
   const config = CARDIO_CONFIG[weekday];
   const [cardioDone, setCardioDone] = useState<boolean | undefined>(undefined);
   const [minutes, setMinutes] = useState(config?.defaultMinutes ?? 20);
   const [mobilityDone, setMobilityDone] = useState<boolean | undefined>(undefined);
   const [showChecklist, setShowChecklist] = useState(false);
-  const [closed, setClosed] = useState(false);
+  // Lets you get back to the checkboxes after they've collapsed — e.g. to
+  // uncheck something you tapped by mistake. Resets to false on remount
+  // (a fresh visit to Today always shows the collapsed "Done" view first
+  // if both are already checked, exactly what was missing before).
+  const [forceExpanded, setForceExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -324,8 +338,19 @@ function CardioMobilityDay({ date, weekday, name }: { date: string; weekday: num
     return <p className="text-sm text-ink-muted">Loading…</p>;
   }
 
-  if (closed) {
-    return <p className="text-ink-muted">Done for today.</p>;
+  const bothDone = (!config || cardioDone) && mobilityDone;
+  if (bothDone && !forceExpanded) {
+    return (
+      <div className="flex flex-col gap-3">
+        <h1 className="text-2xl font-semibold">{name}</h1>
+        <Card className="flex items-center justify-between">
+          <Pill tone="accent">✓ Done for today</Pill>
+          <button type="button" onClick={() => setForceExpanded(true)} className="text-sm text-accent underline">
+            Edit
+          </button>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -362,10 +387,6 @@ function CardioMobilityDay({ date, weekday, name }: { date: string; weekday: num
         </div>
         {showChecklist && <MobilityChecklist />}
       </Card>
-
-      <button type="button" onClick={() => setClosed(true)} className={`w-full ${primaryButtonClass}`}>
-        Done
-      </button>
     </div>
   );
 }
