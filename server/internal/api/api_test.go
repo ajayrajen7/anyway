@@ -2,7 +2,9 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +22,7 @@ func TestHealthz(t *testing.T) {
 	}
 	defer conn.Close()
 
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -40,7 +42,7 @@ func TestApiRoutesRequireBearerToken(t *testing.T) {
 	}
 	defer conn.Close()
 
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/week", nil)
 	rec := httptest.NewRecorder()
@@ -83,7 +85,7 @@ func TestListExercisesExcludesBlockedByDefaultButFindsThemOnSearch(t *testing.T)
 		t.Fatalf("seed: %v", err)
 	}
 
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/exercises", nil)
 	req.Header.Set("Authorization", "Bearer secret")
@@ -119,7 +121,7 @@ func TestGetTodayStatusCodes(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	// No programme seeded yet — a real 404, not a lie-through-200.
 	req := httptest.NewRequest(http.MethodGet, "/api/today?date=2026-01-05", nil)
@@ -145,7 +147,7 @@ func TestGetProgrammeStatusCodes(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/programme", nil)
 	req.Header.Set("Authorization", "Bearer secret")
@@ -184,7 +186,7 @@ func TestPostLogSetUsesPathIDAndIsIdempotent(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 	load := 60.0
 	reps := 8
 	payload := syncpkg.SetPayload{
@@ -220,7 +222,7 @@ func TestPostStepsWrites(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	rec := doJSON(t, router, http.MethodPost, "/api/steps", map[string]any{"date": "2026-01-04", "steps": 7500})
 	if rec.Code != http.StatusNoContent {
@@ -239,7 +241,7 @@ func TestPostSyncDrainsABatchAndReportsPerEntry(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	entries := []map[string]any{
 		{"entity": "protein_log", "entity_id": "2026-01-05", "payload": map[string]any{"date": "2026-01-05", "hit": true}},
@@ -270,7 +272,7 @@ func TestCorsPreflightIsAnsweredWithoutAuth(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	req := httptest.NewRequest(http.MethodOptions, "/api/today", nil)
 	req.Header.Set("Origin", "http://localhost:5173")
@@ -295,7 +297,7 @@ func TestCorsHeaderPresentOnARealResponseToo(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	req.Header.Set("Origin", "http://localhost:5173")
@@ -317,7 +319,7 @@ func TestGetExportDumpsData(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/export", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	rec := httptest.NewRecorder()
@@ -343,7 +345,7 @@ func TestPostMobilityRouteExists(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	router := api.NewRouter(conn, "secret")
+	router := api.NewRouter(conn, "secret", nil)
 
 	rec := doJSON(t, router, http.MethodPost, "/api/mobility", map[string]any{"date": "2026-01-05"})
 	if rec.Code != http.StatusNoContent {
@@ -353,5 +355,81 @@ func TestPostMobilityRouteExists(t *testing.T) {
 	conn.QueryRow(`SELECT done FROM mobility_logs WHERE date = ?`, "2026-01-05").Scan(&done)
 	if !done {
 		t.Fatalf("expected mobility_logs row with done=true")
+	}
+}
+
+// fakeGenerator substitutes for exercisegen.Client in tests — a real call
+// needs ANTHROPIC_API_KEY and the network, neither of which belongs in
+// this suite.
+type fakeGenerator struct {
+	result seed.Exercise
+	err    error
+}
+
+func (f *fakeGenerator) Generate(ctx context.Context, name, notes string) (seed.Exercise, error) {
+	return f.result, f.err
+}
+
+func TestPostGenerateExerciseIsNotImplementedWithoutAGenerator(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	router := api.NewRouter(conn, "secret", nil)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/exercises/generate", map[string]any{"name": "Cable face pull"})
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501 with no generator configured, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPostGenerateExerciseInsertsAndReturnsTheDraftedExercise(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	gen := &fakeGenerator{result: seed.Exercise{
+		Slug: "cable-face-pull", Name: "Cable face pull", Equipment: "cable",
+		Pressure: "low", Impact: "none", IncrementKg: 2.5,
+		Muscles: map[string]float64{"delts_rear": 1.0, "upper_back": 0.5},
+		Source:  "llm",
+	}}
+	router := api.NewRouter(conn, "secret", gen)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/exercises/generate", map[string]any{"name": "Cable face pull"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got seed.Exercise
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ID == 0 || got.Source != "llm" || got.Muscles["delts_rear"] != 1.0 {
+		t.Fatalf("expected the inserted exercise back with a real id and source=llm, got %+v", got)
+	}
+
+	visible, err := seed.List(context.Background(), conn, "", true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(visible) != 1 {
+		t.Fatalf("expected the generated exercise to actually be in the library, got %+v", visible)
+	}
+}
+
+func TestPostGenerateExerciseRejectsAModelFailure(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	gen := &fakeGenerator{err: errors.New("model produced an invalid exercise: x: invalid pressure \"extreme\"")}
+	router := api.NewRouter(conn, "secret", gen)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/exercises/generate", map[string]any{"name": "Something odd"})
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 on a generation failure, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

@@ -2,9 +2,16 @@
 // of the old single Week View. Muscle-group coverage, total volume, and the
 // pain strip, for a chosen week — navigable back/forward (previously fixed
 // to "this week" only). Still fully offline (see src/lib/week.ts).
+//
+// Redesign (M12): rebuilt on the same Card/ProgressBar/Pill components as
+// the session screens, replacing the old raw <table> — per-muscle coverage
+// reads as a filled bar (actual vs. prescribed) rather than a bare ratio,
+// matching the visual language the owner's reference screenshots use.
 import { useEffect, useState } from 'react';
+import { Card, Pill, ProgressBar, StatusDot } from '../components/ui';
 import { db } from '../lib/db';
 import { localDateKey } from '../lib/date';
+import { MUSCLE_LABELS } from '../lib/muscleLabels';
 import { getCachedProgramme } from '../lib/programmeCache';
 import { getAllCachedSessionDates } from '../lib/todayCache';
 import {
@@ -33,31 +40,11 @@ type State =
   | { status: 'no-programme' }
   | { status: 'ready'; rows: MuscleRow[]; volume: number; lastWeekVolume: number; pain: PainDot[] };
 
-const MUSCLE_LABELS: Record<MuscleGroup, string> = {
-  quads: 'Quads',
-  hamstrings: 'Hamstrings',
-  glutes: 'Glutes',
-  adductors: 'Adductors',
-  calves: 'Calves',
-  tibialis: 'Tibialis',
-  foot: 'Foot',
-  erectors: 'Erectors',
-  chest: 'Chest',
-  lats: 'Lats',
-  upper_back: 'Upper back',
-  delts_front: 'Front delts',
-  delts_side: 'Side delts',
-  delts_rear: 'Rear delts',
-  biceps: 'Biceps',
-  triceps: 'Triceps',
-  core: 'Core',
-};
-
-const PAIN_COLOR: Record<PainLevel, string> = {
-  none: 'text-emerald-500',
-  background: 'text-yellow-500',
-  noticeable: 'text-orange-500',
-  limiting: 'text-red-600',
+const PAIN_DOT_TONE: Record<PainLevel, 'accent' | 'muted'> = {
+  none: 'muted',
+  background: 'muted',
+  noticeable: 'accent',
+  limiting: 'accent',
 };
 
 // Not spec-stated: ±10% is a documented UI choice, not a transcribed number.
@@ -117,14 +104,14 @@ function CoverageBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
   if (state.status === 'loading') {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">Loading…</p>
+        <p className="text-sm text-ink-muted">Loading…</p>
       </main>
     );
   }
   if (state.status === 'no-programme') {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">Open Today with a connection first.</p>
+        <p className="text-sm text-ink-muted">Open Today with a connection first.</p>
       </main>
     );
   }
@@ -134,7 +121,7 @@ function CoverageBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
   return (
     <main className="mx-auto max-w-md p-4">
       <div className="flex items-center justify-between">
-        <button type="button" onClick={() => onBoundsChange(previousWeek(bounds))} className="px-2 text-slate-400" aria-label="Previous week">
+        <button type="button" onClick={() => onBoundsChange(previousWeek(bounds))} className="px-2 text-ink-muted" aria-label="Previous week">
           ←
         </button>
         <h1 className="text-lg font-medium">{isThisWeek ? 'This Week' : `${bounds.start} – ${bounds.end}`}</h1>
@@ -142,63 +129,66 @@ function CoverageBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
           type="button"
           onClick={() => onBoundsChange(nextWeek(bounds))}
           disabled={isThisWeek}
-          className="px-2 text-slate-400 disabled:opacity-30"
+          className="px-2 text-ink-muted disabled:opacity-30"
           aria-label="Next week"
         >
           →
         </button>
       </div>
 
-      <table className="mt-4 w-full text-sm">
-        <thead>
-          <tr className="text-left text-slate-400">
-            <th className="pb-2 font-normal">Sets by muscle group</th>
-            <th className="pb-2 text-right font-normal">actual / prescribed</th>
-            <th className="pb-2 pl-2 font-normal" aria-hidden="true"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {state.rows.map((row) => (
-            <MuscleRowView key={row.muscle} row={row} />
-          ))}
-        </tbody>
-      </table>
+      <p className="mt-4 text-xs font-medium uppercase tracking-wide text-ink-muted">Sets by muscle group</p>
+      <div className="mt-2 flex flex-col gap-2">
+        {state.rows.map((row) => (
+          <MuscleRowView key={row.muscle} row={row} />
+        ))}
+      </div>
 
-      <p className="mt-6 text-sm text-slate-300">
-        Total volume <span className="font-medium text-white">{state.volume.toLocaleString()} kg</span>{' '}
-        <span className="text-slate-400">(previous week: {state.lastWeekVolume.toLocaleString()})</span>
-      </p>
+      <Card className="mt-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Total volume</p>
+        <p className="mt-1 text-sm text-ink">
+          <span className="text-xl font-semibold text-ink">{state.volume.toLocaleString()} kg</span>{' '}
+          <span className="text-ink-muted">(previous week: {state.lastWeekVolume.toLocaleString()})</span>
+        </p>
+      </Card>
 
-      <div className="mt-6">
-        <p className="text-sm text-slate-400">Mornings</p>
-        <div className="mt-1 flex gap-2 text-xl" role="img" aria-label="This week's morning pain check-ins">
+      <Card className="mt-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Mornings</p>
+        <div className="mt-2 flex gap-2" role="img" aria-label="This week's morning pain check-ins">
           {state.pain.map((dot) => (
-            <span key={dot.date} className={dot.pain ? PAIN_COLOR[dot.pain] : 'text-slate-600'} title={dot.pain ?? 'not logged'}>
-              {dot.pain ? '●' : '○'}
+            <span key={dot.date} title={dot.pain ?? 'not logged'}>
+              <StatusDot tone={dot.pain ? PAIN_DOT_TONE[dot.pain] : 'none'} />
             </span>
           ))}
         </div>
-      </div>
+      </Card>
     </main>
   );
 }
 
 function MuscleRowView({ row }: { row: MuscleRow }) {
   const deltaPct = row.prescribed > 0 ? ((row.actual - row.prescribed) / row.prescribed) * 100 : 0;
-  let marker = <span className="text-emerald-500">●</span>;
+  let marker = <Pill tone="accent">On target</Pill>;
   if (deltaPct > ON_TARGET_BAND_PCT) {
-    marker = <span className="text-amber-500">▲ +{Math.round(deltaPct)}%</span>;
+    marker = <Pill tone="accent">▲ +{Math.round(deltaPct)}%</Pill>;
   } else if (deltaPct < -ON_TARGET_BAND_PCT) {
-    marker = <span className="text-slate-400">▼ {Math.round(deltaPct)}%</span>;
+    marker = <Pill>▼ {Math.round(deltaPct)}%</Pill>;
   }
+  const fraction = row.prescribed > 0 ? row.actual / row.prescribed : row.actual > 0 ? 1 : 0;
 
   return (
-    <tr>
-      <td className="py-1">{MUSCLE_LABELS[row.muscle]}</td>
-      <td className="py-1 text-right tabular-nums">
-        {row.actual} / {row.prescribed}
-      </td>
-      <td className="py-1 pl-2 text-right">{marker}</td>
-    </tr>
+    <Card>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-ink">{MUSCLE_LABELS[row.muscle]}</span>
+        <span className="text-xs tabular-nums text-ink-muted">
+          {row.actual} / {row.prescribed}
+        </span>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex-1">
+          <ProgressBar value={fraction} />
+        </div>
+        {marker}
+      </div>
+    </Card>
   );
 }

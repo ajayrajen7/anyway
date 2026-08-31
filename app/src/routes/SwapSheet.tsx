@@ -48,7 +48,7 @@ export default function SwapSheet() {
 
   return (
     <SheetShell onClose={() => navigate('..')}>
-      <h2 className="text-sm text-slate-400">Instead of {(currentSlot ?? originalSlot).exercise.name.toUpperCase()}:</h2>
+      <h2 className="text-sm text-ink-muted">Instead of {(currentSlot ?? originalSlot).exercise.name.toUpperCase()}:</h2>
 
       <ul className="mt-3 flex flex-col gap-1">
         {originalSlot.swaps.map((option) => (
@@ -56,7 +56,7 @@ export default function SwapSheet() {
             <button
               type="button"
               onClick={() => pick(option, 'swap_in_list')}
-              className="w-full rounded-md bg-slate-800 px-3 py-3 text-left"
+              className="w-full rounded-md bg-surface px-3 py-3 text-left"
             >
               {option.name}
             </button>
@@ -64,27 +64,27 @@ export default function SwapSheet() {
         ))}
       </ul>
 
-      <div className="mt-4 border-t border-slate-700 pt-3">
+      <div className="mt-4 border-t border-border pt-3">
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search…"
           aria-label="Search exercises"
-          className="w-full rounded-md bg-slate-800 px-3 py-3 text-white"
+          className="w-full rounded-md bg-surface px-3 py-3 text-white"
         />
         <ul className="mt-2 flex flex-col gap-1">
           {results.map((r) => (
             <li key={r.id}>
               {r.blocked ? (
-                <div className="w-full rounded-md bg-slate-900 px-3 py-3 text-slate-500">
+                <div className="w-full rounded-md bg-bg px-3 py-3 text-ink-muted">
                   {r.name} — <span className="text-xs">{r.block_reason}</span>
                 </div>
               ) : (
                 <button
                   type="button"
                   onClick={() => pick(r, 'swap_off_list')}
-                  className="w-full rounded-md bg-slate-800 px-3 py-3 text-left"
+                  className="w-full rounded-md bg-surface px-3 py-3 text-left"
                 >
                   {r.name}
                 </button>

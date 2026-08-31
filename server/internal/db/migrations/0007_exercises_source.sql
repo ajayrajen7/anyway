@@ -1,0 +1,11 @@
+-- Where an exercise record came from: the hand-transcribed programme.md/prd.md
+-- §A5 library ('programme') vs. an LLM-drafted record from real-time exercise
+-- creation ('llm', see server/internal/exercisegen). CLAUDE.md rule 8 flags
+-- the transcribed data as carrying real injury-safety weight; this column is
+-- how the client tells the two apart instead of blending them at equal trust
+-- (see memory.md's "real-time exercise creation" decision).
+--
+-- Non-idempotent on re-run (SQLite has no ADD COLUMN IF NOT EXISTS) — same
+-- shape as 0003_logged_sets_client_uuid.sql, already tolerated by db.go's
+-- migrate() loop.
+ALTER TABLE exercises ADD COLUMN source TEXT NOT NULL DEFAULT 'programme';

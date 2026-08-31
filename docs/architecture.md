@@ -23,6 +23,8 @@
 
 Every free tier evaluated (Render's included) either has no persistent disk at all or discards it between restarts, which is fatal for an app whose entire point is a training log that survives a 6-month programme — some small paid tier with an attached volume is the realistic floor, discussed and confirmed with the project owner (memory.md).
 
+**Amendment (M12):** one new backend dependency, `github.com/anthropics/anthropic-sdk-go` — real-time exercise creation (`server/internal/exercisegen`) needs it to call Claude Haiku 4.5. Optional at runtime (`ANTHROPIC_API_KEY` unset just disables that one endpoint, see §B5) but a real, permanent addition to `server/go.mod`, asked and confirmed with the owner alongside the rest of that decision — see `memory.md`.
+
 A freshly-provisioned host's persistent volume starts out completely empty, and not every platform gives interactive shell access to run `cmd/seed`/`cmd/programme` by hand. `server/internal/bootstrap` auto-seeds the exercise library and Phase 1 programme on first boot instead, embedding the same `seed/*.json` files (copied in at build time, same `go:embed`-can't-reach-outside-its-package pattern as `internal/db`'s migrations and `internal/webapp`'s frontend). It checks each table independently and only ever seeds an empty one — once a phase exists it is never touched again, since `programme.Apply`'s wipe-and-reinsert strategy (§B7/M2) is unsafe once real `sessions` rows exist.
 
 ## B2. Offline-first — the non-negotiable
@@ -36,6 +38,8 @@ A freshly-provisioned host's persistent volume starts out completely empty, and 
 - Server SQLite is the durable backup, not the runtime dependency.
 - **Nightly `VACUUM INTO` to a timestamped file, plus off-box copy.** Six months of data with no backup is the one unrecoverable failure mode here.
   **Amendment (M10):** the `VACUUM INTO` half is real (`server/internal/backup`, run nightly in its own goroutine from `cmd/server`, filenames sorting chronologically, oldest pruned beyond a configurable count). The **off-box copy half is deliberately not implemented** — it names a real destination (object storage, another host, ...) that was never specified, and picking one would be exactly the kind of unasked architectural assumption `CLAUDE.md` rule 4 says to surface instead. `backup.OffBoxCopy` is the extension point, `nil` for now; `RunNightly` logs plainly that off-box copy isn't configured on every run rather than silently pretending backups already leave the host. See `memory.md` (M10) — this is flagged as the actual open blocker for calling M10 fully done, not swept under a ✅.
+
+**Amendment (M12, real-time exercise creation):** one deliberate, narrow exception to "the session runner never awaits a network call." Add-exercise's search sheet (`app/src/routes/AddExercise.tsx`) can call `POST /api/exercises/generate` to draft a brand-new exercise via a cheap LLM (`server/internal/exercisegen`, Claude Haiku 4.5) when the offline search comes up empty — the one moment where an exercise genuinely doesn't exist yet for the offline path to find. This is scoped as tightly as possible: the call happens *before* an exercise exists to add, never while logging sets against one; every exercise it produces is written into the shared `exercises` table (`source='llm'`, see §B3) and cached into Dexie immediately, so from that point on it behaves exactly like any seeded exercise — offline, cacheable, loggable. If genuinely offline, the create action is simply unavailable (a clear "needs a connection" message, not a broken button) — everything else on this screen, and every other screen, stays 100% offline as before. See `memory.md`'s "real-time exercise creation" decision for the full reasoning and the options considered.
 
 ## B3. Schema
 
@@ -51,7 +55,8 @@ CREATE TABLE exercises (
   increment_kg  REAL NOT NULL DEFAULT 2.5,
   blocked       INTEGER NOT NULL DEFAULT 0,
   block_reason  TEXT,
-  caution       TEXT
+  caution       TEXT,
+  source        TEXT NOT NULL DEFAULT 'programme'  -- 'programme' | 'llm' — M12, see §B2's amendment below
 );
 
 CREATE TABLE exercise_muscles (
@@ -185,6 +190,7 @@ POST /api/sessions/:id/sets/:sid/skip
 POST /api/sessions/:id/add          → { exercise_id, added_by }
 POST /api/sessions/:id/complete     → { note? }
 GET  /api/exercises?q=              → search, excludes blocked unless ?include_blocked=1
+POST /api/exercises/generate        → { name, notes? } — LLM-drafted new exercise (M12, see §B2's amendment)
 POST /api/morning-check             → { date, pain }
 POST /api/protein                   → { date, hit }
 POST /api/cardio                    → { date, modality, duration_min }
@@ -212,6 +218,8 @@ Also in M9:
 - **Idempotency for `logged_set`** is an upsert on the new `client_uuid` unique index (`ON CONFLICT(client_uuid) DO NOTHING`) — this guards against a *retried* sync POST creating a duplicate row, not against editing an already-logged set: the client never revises a committed set through this path, so a second `client_uuid` for the same `(session_id, exercise_id, set_index)` is a deliberate new history entry, not a duplicate. Every other entity (`morning_check`, `protein_log`, `mobility_log`, `steps_log`) is keyed by its own natural key (a date, or date+modality for `cardio_log`) and upserts/replaces on that — idempotent by construction, no UUID needed.
 - **`GET /api/export` (M10) is real** — a full JSON dump of every table (`server/internal/export`, a generic `SELECT *` over a fixed table whitelist rather than one struct per table, so it reflects the schema as-is including future columns without needing a matching update here). **UX refactor:** the old `weigh_ins`-only Vault gate on this route is gone along with the feature — every table dumps unconditionally now.
 
+**Amendment (M12):** **`POST /api/exercises/generate`** — `{name, notes?}` in, one `Exercise` (§B3 shape, `source: "llm"`) out. Calls `server/internal/exercisegen` (Claude Haiku 4.5 via the Anthropic API, forced structured tool output), validates the result through the exact same `seed.ValidateExercise` rules a hand-authored seed-file entry has to pass, then inserts it via `seed.InsertOne` — which never overwrites an existing exercise; a colliding slug gets a numeric suffix instead. Needs `ANTHROPIC_API_KEY` set server-side; with no key configured the route answers `501` rather than the server failing to start (same "this feature degrades, not the app" shape as `backup.OffBoxCopy` being `nil` until wired up). See §B2's amendment and `memory.md` for the full reasoning, including why this is the one place a `/session/*`-reachable screen is allowed to touch the network.
+
 ## B6. Frontend rules Claude Code must enforce
 
 1. **No `<input type="number">` or any focusable text field inside the exercise screen where sets are logged (`/session/:id/exercise/:key`).** Steppers only. This is a testable assertion — write a test for it. **Amendment (M5):** this rule scopes to the set-logging screen itself, matching prd.md §A3.3.1's own literal wording ("no keyboard is reachable from *this screen*"), not literally every route nested under `/session/*`. The Swap sheet (§A3.4) and Add-exercise (§A3.5) explicitly mock up a "Search…" text box each — those two screens get a real text input for tier-2/full-library search. The no-input test stays scoped to the single-exercise screen's component only. **Amendment (UX refactor):** the set-logging screen moved from `/session/:id` to `/session/:id/exercise/:key` when the exercise list (§A3.3) became the session's landing screen — the rule and its test moved with it, unchanged in substance.
@@ -220,6 +228,7 @@ Also in M9:
 4. Rest timer is a passive display, never a modal, never blocking.
 5. **Amendment (UX refactor):** the old "Week View" screen (`/week`) — coverage numbers and the pain strip together, never split into tabs — is itself now split into two bottom-nav tabs, Coverage (`/coverage`) and Week Plan (`/week`). This rule's *spirit* survives at the Coverage level: Coverage's own muscle table, volume line, and pain strip still render in one scroll view, never their own sub-tabs. Week Plan is a genuinely different screen (a Mon–Sat grid), not a further split of Coverage's content.
 6. ~~No component in v1 may render a weight value or any aggregation spanning more than 7 days.~~ **Moot as of the UX refactor** — weight isn't tracked at all now, so there's no weight value anywhere in the codebase to guard against rendering. The "no aggregation spanning more than 7 days" half still holds for everything else (Coverage, Week Plan) — both are single-week views by design, with no multi-week chart anywhere.
+7. **Amendment (M12, UI redesign):** a small shared component layer, `app/src/components/ui.tsx` (`Card`, `Pill`, `ProgressBar`, `PrimaryButton`/`SecondaryButton`, `StatusDot`) plus design tokens in `app/src/index.css`'s Tailwind v4 `@theme` block (`bg`/`surface`/`surface-alt`/`accent`/`accent-soft`/`ink`/`ink-muted`/`border`), replacing ad-hoc `bg-slate-800`/`bg-emerald-600` classes inlined per-screen. Built to match the owner's reference screenshots (dark ground, an orange accent, rounded cards, pill tags, a thin progress bar) — every screen (Today, the session screens, Coverage, Week Plan) now shares the same visual vocabulary. The exact color values are a documented approximation of the reference, not sampled pixel values — same "inference, not transcription" caveat as M1's `increment_kg` numbers.
 
 ## B7. Build order
 

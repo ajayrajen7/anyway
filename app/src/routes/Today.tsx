@@ -8,6 +8,7 @@
 // doesn't think in phase-day labels day to day, they think in weekdays.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Card, primaryButtonClass } from '../components/ui';
 import { ApiError, getToday } from '../lib/api';
 import {
   clearCardioLog,
@@ -96,7 +97,7 @@ export default function Today() {
 
   return (
     <main className="mx-auto max-w-md p-4">
-      {state.status === 'loading' && <p className="text-sm text-slate-400">Loading…</p>}
+      {state.status === 'loading' && <p className="text-sm text-ink-muted">Loading…</p>}
       {state.status === 'error' && <p className="text-sm text-red-400">{state.message}</p>}
       {state.status === 'ready' && <TodayCard data={state.data} />}
     </main>
@@ -109,9 +110,9 @@ function TodayCard({ data }: { data: TodayResponse }) {
 
   if (dayTemplate.kind === 'rest') {
     return (
-      <div>
-        <h1 className="text-lg font-medium">{weekdayName}</h1>
-        <p className="mt-2 text-sm text-slate-400">Flat walk only. Not training — just movement.</p>
+      <div className="flex flex-col gap-3">
+        <h1 className="text-2xl font-semibold">{weekdayName}</h1>
+        <p className="text-sm text-ink-muted">Flat walk only. Not training — just movement.</p>
         <StepsRow date={date} />
         {isAfter6pm() && <ProteinRow date={date} />}
       </div>
@@ -120,7 +121,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
 
   if (dayTemplate.kind === 'cardio_mobility') {
     return (
-      <div>
+      <div className="flex flex-col gap-3">
         <CardioMobilityDay date={date} weekday={weekday} name={weekdayName} />
         <StepsRow date={date} />
         {isAfter6pm() && <ProteinRow date={date} />}
@@ -131,21 +132,19 @@ function TodayCard({ data }: { data: TodayResponse }) {
   // lifting day
   const minutes = SESSION_MINUTES[weekday];
   return (
-    <div>
-      <div className="rounded-lg bg-slate-800 p-4">
-        <h1 className="text-lg font-medium">{weekdayName}</h1>
-        <p className="mt-1 text-sm text-slate-400">
+    <div className="flex flex-col gap-3">
+      <h1 className="text-2xl font-semibold">{weekdayName}</h1>
+      <Card>
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Today's session</p>
+        <p className="mt-2 text-sm text-ink-muted">
           {slots.length} exercises{minutes ? ` · ~${minutes} min` : ''}
         </p>
         {session && (
-          <Link
-            to={`/session/${session.id}`}
-            className="mt-4 inline-block rounded-md bg-emerald-600 px-4 py-3 text-center font-medium"
-          >
+          <Link to={`/session/${session.id}`} className={`mt-4 w-full ${primaryButtonClass}`}>
             Start session
           </Link>
         )}
-      </div>
+      </Card>
       <MobilityCheckbox date={date} />
       <StepsRow date={date} />
       {isAfter6pm() && <ProteinRow date={date} />}
@@ -179,10 +178,12 @@ function MobilityCheckbox({ date }: { date: string }) {
   if (done === undefined) return null;
 
   return (
-    <label className="mt-4 flex items-center gap-2 text-sm text-slate-300">
-      <input type="checkbox" checked={done} onChange={toggle} className="h-5 w-5" />
-      Mobility (10 min)
-    </label>
+    <Card>
+      <label className="flex items-center gap-2 text-sm text-ink">
+        <input type="checkbox" checked={done} onChange={toggle} className="h-5 w-5" />
+        Mobility (10 min)
+      </label>
+    </Card>
   );
 }
 
@@ -207,25 +208,25 @@ function ProteinRow({ date }: { date: string }) {
   if (hit === undefined) return null;
 
   return (
-    <div className="mt-4 flex items-center justify-between rounded-md bg-slate-800 px-3 py-3">
-      <span className="text-sm text-slate-300">Protein — hit 120g?</span>
+    <Card className="flex items-center justify-between">
+      <span className="text-sm text-ink">Protein — hit 120g?</span>
       <div className="flex gap-2">
         <button
           type="button"
           onClick={() => choose(true)}
-          className={`rounded-md px-4 py-2 text-sm ${hit === true ? 'bg-emerald-600' : 'bg-slate-700'}`}
+          className={`rounded-lg px-4 py-2 text-sm ${hit === true ? 'bg-accent text-white' : 'bg-surface-alt text-ink'}`}
         >
           Yes
         </button>
         <button
           type="button"
           onClick={() => choose(false)}
-          className={`rounded-md px-4 py-2 text-sm ${hit === false ? 'bg-red-800' : 'bg-slate-700'}`}
+          className={`rounded-lg px-4 py-2 text-sm ${hit === false ? 'bg-red-800 text-white' : 'bg-surface-alt text-ink'}`}
         >
           No
         </button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -255,18 +256,18 @@ function StepsRow({ date }: { date: string }) {
   if (steps === undefined) return null;
 
   return (
-    <div className="mt-4 flex items-center justify-between rounded-md bg-slate-800 px-3 py-3">
-      <span className="text-sm text-slate-300">Steps</span>
+    <Card className="flex items-center justify-between">
+      <span className="text-sm text-ink">Steps</span>
       <div className="flex items-center gap-3">
-        <button type="button" aria-label="Decrease steps" onClick={() => adjust(-STEPS_INCREMENT)} className="h-8 w-8 rounded-full bg-slate-700">
+        <button type="button" aria-label="Decrease steps" onClick={() => adjust(-STEPS_INCREMENT)} className="h-8 w-8 rounded-full bg-surface-alt">
           −
         </button>
         <span className="text-sm tabular-nums">{steps.toLocaleString()}</span>
-        <button type="button" aria-label="Increase steps" onClick={() => adjust(STEPS_INCREMENT)} className="h-8 w-8 rounded-full bg-slate-700">
+        <button type="button" aria-label="Increase steps" onClick={() => adjust(STEPS_INCREMENT)} className="h-8 w-8 rounded-full bg-surface-alt">
           +
         </button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -328,49 +329,49 @@ function CardioMobilityDay({ date, weekday, name }: { date: string; weekday: num
   }
 
   if (cardioDone === undefined || mobilityDone === undefined) {
-    return <p className="text-sm text-slate-400">Loading…</p>;
+    return <p className="text-sm text-ink-muted">Loading…</p>;
   }
 
   if (closed) {
-    return <p className="text-slate-400">Done for today.</p>;
+    return <p className="text-ink-muted">Done for today.</p>;
   }
 
   return (
-    <div>
-      <h1 className="text-lg font-medium uppercase">{name}</h1>
+    <div className="flex flex-col gap-3">
+      <h1 className="text-2xl font-semibold">{name}</h1>
 
       {config && (
-        <div className="mt-4 flex items-center justify-between rounded-md bg-slate-800 px-3 py-3">
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+        <Card className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-sm text-ink">
             <input type="checkbox" checked={cardioDone} onChange={toggleCardio} className="h-5 w-5" />
             {config.label}
           </label>
           <div className="flex items-center gap-3">
-            <button type="button" aria-label="Decrease minutes" onClick={() => adjustMinutes(-5)} className="h-8 w-8 rounded-full bg-slate-700">
+            <button type="button" aria-label="Decrease minutes" onClick={() => adjustMinutes(-5)} className="h-8 w-8 rounded-full bg-surface-alt">
               −
             </button>
             <span className="text-sm">{minutes} min</span>
-            <button type="button" aria-label="Increase minutes" onClick={() => adjustMinutes(5)} className="h-8 w-8 rounded-full bg-slate-700">
+            <button type="button" aria-label="Increase minutes" onClick={() => adjustMinutes(5)} className="h-8 w-8 rounded-full bg-surface-alt">
               +
             </button>
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="mt-2 rounded-md bg-slate-800 px-3 py-3">
+      <Card>
         <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-ink">
             <input type="checkbox" checked={mobilityDone} onChange={toggleMobility} className="h-5 w-5" />
             Full mobility ({MOBILITY_ITEMS.length} items)
           </label>
-          <button type="button" onClick={() => setShowChecklist((v) => !v)} className="text-sm text-slate-400 underline">
+          <button type="button" onClick={() => setShowChecklist((v) => !v)} className="text-sm text-accent underline">
             {showChecklist ? 'Hide' : 'View'}
           </button>
         </div>
         {showChecklist && <MobilityChecklist />}
-      </div>
+      </Card>
 
-      <button type="button" onClick={() => setClosed(true)} className="mt-4 w-full rounded-md bg-emerald-600 py-3 font-medium">
+      <button type="button" onClick={() => setClosed(true)} className={`w-full ${primaryButtonClass}`}>
         Done
       </button>
     </div>
@@ -392,7 +393,7 @@ function MobilityChecklist() {
   }
 
   return (
-    <ul className="mt-2 flex flex-col gap-1 text-sm text-slate-300">
+    <ul className="mt-2 flex flex-col gap-1 text-sm text-ink">
       {MOBILITY_ITEMS.map((item, i) => (
         <li key={item}>
           <label className="flex items-center gap-2">

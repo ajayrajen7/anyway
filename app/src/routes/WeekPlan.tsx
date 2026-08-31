@@ -4,8 +4,12 @@
 // for exactly what the "3" are per day kind. Sunday is deliberately not
 // shown here (rest day, nothing prescribed to grade) — Coverage's pain
 // strip still covers all 7 days. Navigable across weeks, fully offline.
+//
+// Redesign (M12): day rows rebuilt as Cards with a StatusDot, matching the
+// session screens' component language instead of a bare styled <ul>.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Card, StatusDot } from '../components/ui';
 import { db } from '../lib/db';
 import { localDateKey, parseDateKey } from '../lib/date';
 import { getCachedProgramme } from '../lib/programmeCache';
@@ -23,10 +27,15 @@ const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', '
 
 type State = { status: 'loading' } | { status: 'no-programme' } | { status: 'ready'; days: DayCompletion[] };
 
-const COLOR_DOT: Record<DayCompletion['color'], string> = {
-  green: 'bg-emerald-600',
+// green/red map onto the shared StatusDot tones (accent = done, none =
+// nothing logged); yellow (partial) keeps its own amber — a three-state
+// day grade doesn't fit the two-tone accent/muted vocabulary StatusDot
+// uses elsewhere, so it renders directly rather than forcing a third tone
+// into that shared component.
+const DOT_CLASS: Record<DayCompletion['color'], string | null> = {
+  green: null, // uses <StatusDot tone="accent" />
   yellow: 'bg-amber-500',
-  red: 'bg-slate-700',
+  red: null, // uses <StatusDot tone="none" />
 };
 
 export default function WeekPlan() {
@@ -95,14 +104,14 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
   if (state.status === 'loading') {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">Loading…</p>
+        <p className="text-sm text-ink-muted">Loading…</p>
       </main>
     );
   }
   if (state.status === 'no-programme') {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">Open Today with a connection first.</p>
+        <p className="text-sm text-ink-muted">Open Today with a connection first.</p>
       </main>
     );
   }
@@ -112,7 +121,7 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
   return (
     <main className="mx-auto max-w-md p-4">
       <div className="flex items-center justify-between">
-        <button type="button" onClick={() => onBoundsChange(previousWeek(bounds))} className="px-2 text-slate-400" aria-label="Previous week">
+        <button type="button" onClick={() => onBoundsChange(previousWeek(bounds))} className="px-2 text-ink-muted" aria-label="Previous week">
           ←
         </button>
         <h1 className="text-lg font-medium">{isThisWeek ? 'This Week' : `${bounds.start} – ${bounds.end}`}</h1>
@@ -120,7 +129,7 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
           type="button"
           onClick={() => onBoundsChange(nextWeek(bounds))}
           disabled={isThisWeek}
-          className="px-2 text-slate-400 disabled:opacity-30"
+          className="px-2 text-ink-muted disabled:opacity-30"
           aria-label="Next week"
         >
           →
@@ -129,19 +138,25 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
 
       <ul className="mt-4 flex flex-col gap-2">
         {state.days.map((day, i) => (
-          <li key={day.date} className="flex items-center justify-between rounded-md bg-slate-800 px-3 py-3">
-            <span className="flex items-center gap-3">
-              <span className={`h-3 w-3 rounded-full ${COLOR_DOT[day.color]}`} aria-hidden="true" />
-              {WEEKDAY_NAMES[i]}
-            </span>
-            <span className="text-xs text-slate-400">
-              {day.done} of {day.total}
-            </span>
+          <li key={day.date}>
+            <Card className="flex items-center justify-between">
+              <span className="flex items-center gap-3 text-ink">
+                {DOT_CLASS[day.color] ? (
+                  <span className={`inline-block h-3 w-3 rounded-full ${DOT_CLASS[day.color]}`} aria-hidden="true" />
+                ) : (
+                  <StatusDot tone={day.color === 'green' ? 'accent' : 'none'} />
+                )}
+                {WEEKDAY_NAMES[i]}
+              </span>
+              <span className="text-xs tabular-nums text-ink-muted">
+                {day.done} of {day.total}
+              </span>
+            </Card>
           </li>
         ))}
       </ul>
 
-      <Link to="/coverage" className="mt-4 block text-sm text-slate-400 underline">
+      <Link to="/coverage" className="mt-4 block text-sm text-accent underline">
         View coverage →
       </Link>
     </main>

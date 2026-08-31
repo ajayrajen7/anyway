@@ -70,3 +70,17 @@ export async function postSync(
   const raw = await apiFetch<unknown>('/api/sync', { method: 'POST', body: JSON.stringify(entries) });
   return SyncResult.array().parse(raw);
 }
+
+// POST /api/exercises/generate — real-time LLM-drafted exercise creation
+// (memory.md's "real-time exercise creation" decision). The one deliberate
+// online-only call in AddExercise.tsx: everything else in /session/* stays
+// offline-first exactly as before. Throws ApiError(501) if the server has
+// no ANTHROPIC_API_KEY configured, ApiError(502) if the model/validation
+// failed — AddExercise.tsx handles both as "couldn't create it right now".
+export async function generateExercise(name: string, notes?: string): Promise<Exercise> {
+  const raw = await apiFetch<unknown>('/api/exercises/generate', {
+    method: 'POST',
+    body: JSON.stringify({ name, notes: notes ?? '' }),
+  });
+  return Exercise.parse(raw);
+}

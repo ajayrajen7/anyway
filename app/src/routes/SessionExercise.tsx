@@ -15,6 +15,7 @@
 // already-logged sets — never calls the API.
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
+import { Card, Pill, ProgressBar, primaryButtonClass, secondaryButtonClass } from '../components/ui';
 import { getCachedToday } from '../lib/todayCache';
 import { getOverlay } from '../lib/overlay';
 import { loggedSetsFor, logSet } from '../lib/outbox';
@@ -63,14 +64,14 @@ export default function SessionExercise() {
   if (cached === undefined || overlay === undefined) {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">Loading…</p>
+        <p className="text-sm text-ink-muted">Loading…</p>
       </main>
     );
   }
   if (cached === null) {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-muted">
           Session not available offline yet — open Today with a connection first.
         </p>
       </main>
@@ -84,7 +85,7 @@ export default function SessionExercise() {
   if (!slot) {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">Exercise not found — it may have been deleted from this session.</p>
+        <p className="text-sm text-ink-muted">Exercise not found — it may have been deleted from this session.</p>
       </main>
     );
   }
@@ -105,12 +106,15 @@ export default function SessionExercise() {
   return (
     <main className="mx-auto max-w-md p-4">
       <div className="flex items-center justify-between">
-        <button type="button" onClick={goToList} className="text-sm text-slate-400" aria-label="Back to exercise list">
+        <button type="button" onClick={goToList} className="text-sm text-ink-muted" aria-label="Back to exercise list">
           ← Exercises
         </button>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-muted">
           {index + 1} of {slots.length}
         </p>
+      </div>
+      <div className="mt-2">
+        <ProgressBar value={(index + 1) / slots.length} />
       </div>
 
       {/* Keyed by slot.key: switching exercises (or swapping the current
@@ -185,19 +189,22 @@ function ExercisePanel({
 
   return (
     <>
-      <h1 className="mt-2 text-xl font-semibold uppercase">{slot.exercise.name}</h1>
-      <p className="text-sm text-slate-400">
-        Prescribed: {slot.sets} × {slot.reps} {slot.loadKg != null ? `@ ${slot.loadKg} kg` : ''}
-      </p>
-      {slot.lastActual && (
-        <p className="text-sm text-slate-400">
-          Last time: {slot.sets} × {slot.lastActual.reps} {slot.lastActual.load_kg != null ? `@ ${slot.lastActual.load_kg} kg` : ''}
+      <h1 className="mt-3 text-2xl font-semibold uppercase">{slot.exercise.name}</h1>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {slot.provenance === 'added' && <Pill tone="accent">Added — {slot.addedBy === 'trainer' ? "trainer's call" : 'my call'}</Pill>}
+        {slot.note && <Pill>{slot.note}</Pill>}
+      </div>
+
+      <Card className="mt-3">
+        <p className="text-sm text-ink-muted">
+          Prescribed: {slot.sets} × {slot.reps} {slot.loadKg != null ? `@ ${slot.loadKg} kg` : ''}
         </p>
-      )}
-      {slot.provenance === 'added' && (
-        <p className="text-xs text-amber-500">Added — {slot.addedBy === 'trainer' ? "trainer's call" : 'my call'}</p>
-      )}
-      {slot.note && <p className="mt-1 text-xs text-slate-500">{slot.note}</p>}
+        {slot.lastActual && (
+          <p className="mt-1 text-sm text-ink-muted">
+            Last time: {slot.sets} × {slot.lastActual.reps} {slot.lastActual.load_kg != null ? `@ ${slot.lastActual.load_kg} kg` : ''}
+          </p>
+        )}
+      </Card>
 
       {restSince && <RestTimer since={restSince} />}
 
@@ -215,22 +222,22 @@ function ExercisePanel({
             />
           ))
         ) : (
-          <p className="text-sm text-slate-400">Loading sets…</p>
+          <p className="text-sm text-ink-muted">Loading sets…</p>
         )}
       </div>
 
       <div className="mt-6 flex justify-between gap-2">
         {slot.slotId != null ? (
-          <Link to={`swap/${slot.slotId}`} className="flex-1 rounded-md bg-slate-800 py-3 text-center">
+          <Link to={`swap/${slot.slotId}`} className={`flex-1 ${secondaryButtonClass}`}>
             Swap
           </Link>
         ) : (
           <span className="flex-1" /> // an added exercise has no slot to swap
         )}
-        <button type="button" onClick={skipExercise} disabled={!rowsReady} className="flex-1 rounded-md bg-slate-800 py-3 disabled:opacity-50">
+        <button type="button" onClick={skipExercise} disabled={!rowsReady} className={`flex-1 ${secondaryButtonClass}`}>
           Skip
         </button>
-        <button type="button" onClick={onAdvance} disabled={!rowsReady} className="flex-1 rounded-md bg-emerald-600 py-3 disabled:opacity-50">
+        <button type="button" onClick={onAdvance} disabled={!rowsReady} className={`flex-1 ${primaryButtonClass}`}>
           {isLast ? '← List' : 'Next →'}
         </button>
       </div>
@@ -248,7 +255,7 @@ function RestTimer({ since }: { since: string }) {
   const mm = Math.floor(elapsedSec / 60);
   const ss = String(elapsedSec % 60).padStart(2, '0');
   return (
-    <p aria-live="polite" className="mt-2 text-xs text-slate-500">
+    <p aria-live="polite" className="mt-2 text-xs text-ink-muted">
       Rest: {mm}:{ss}
     </p>
   );
@@ -275,7 +282,7 @@ function SetRow({
     return (
       <div
         data-testid={`set-row-${index}`}
-        className="flex items-center justify-between rounded-md bg-slate-800/50 px-3 py-4 text-slate-500 line-through"
+        className="flex items-center justify-between rounded-2xl bg-surface/60 px-3 py-4 text-ink-muted line-through"
       >
         <span>Set {index + 1}</span>
         <span>
@@ -289,7 +296,7 @@ function SetRow({
   return (
     <div
       data-testid={`set-row-${index}`}
-      className="flex items-center justify-between rounded-md bg-slate-800 px-3 py-4"
+      className="flex items-center justify-between rounded-2xl bg-surface px-3 py-4"
       onPointerDown={(e) => setDragStartX(e.clientX)}
       onPointerUp={(e) => {
         if (dragStartX != null && isSwipeLeft(e.clientX - dragStartX)) {
@@ -305,7 +312,7 @@ function SetRow({
           <button
             type="button"
             aria-label="Decrease weight"
-            className="h-12 w-12 rounded-full bg-slate-700"
+            className="h-12 w-12 rounded-full bg-surface-alt"
             onClick={() => onUpdate({ loadKg: clampNonNegative((row.loadKg ?? 0) - incrementKg) })}
           >
             −
@@ -314,7 +321,7 @@ function SetRow({
           <button
             type="button"
             aria-label="Increase weight"
-            className="h-12 w-12 rounded-full bg-slate-700"
+            className="h-12 w-12 rounded-full bg-surface-alt"
             onClick={() => onUpdate({ loadKg: clampNonNegative((row.loadKg ?? 0) + incrementKg) })}
           >
             +
@@ -333,7 +340,7 @@ function SetRow({
           <button
             type="button"
             aria-label="Decrease reps"
-            className="h-12 w-12 rounded-full bg-slate-700"
+            className="h-12 w-12 rounded-full bg-surface-alt"
             onClick={() => onUpdate({ reps: clampNonNegative(row.reps - 1) })}
           >
             −
@@ -342,7 +349,7 @@ function SetRow({
           <button
             type="button"
             aria-label="Increase reps"
-            className="h-12 w-12 rounded-full bg-slate-700"
+            className="h-12 w-12 rounded-full bg-surface-alt"
             onClick={() => onUpdate({ reps: clampNonNegative(row.reps + 1) })}
           >
             +
@@ -358,7 +365,7 @@ function SetRow({
         type="button"
         aria-label={`Log set ${index + 1}`}
         onClick={onCommit}
-        className="ml-2 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-600 text-xl"
+        className="ml-2 flex h-16 w-16 items-center justify-center rounded-full bg-accent text-xl text-white"
       >
         ✓
       </button>

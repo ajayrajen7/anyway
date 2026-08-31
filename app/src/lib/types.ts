@@ -32,6 +32,13 @@ export const Exercise = z.object({
   // handful of the 17 muscle groups (§A5.2) — z.record(enum, ...) infers a
   // TS type requiring *every* key present, which no real exercise satisfies.
   muscles: z.partialRecord(z.enum(MUSCLE_GROUPS), z.number()),
+  // 'programme' = the hand-transcribed prd.md §A5 library; 'llm' = drafted
+  // in real time by the server's exercisegen package (see AddExercise.tsx).
+  // Optional, not defaulted: a stale cached record from before this field
+  // existed (or any fixture/test object built without it) should still
+  // parse/typecheck — undefined is treated the same as 'programme'
+  // everywhere this is read (e.g. `exercise.source === 'llm'`).
+  source: z.enum(['programme', 'llm']).optional(),
 });
 export type Exercise = z.infer<typeof Exercise>;
 

@@ -4,6 +4,7 @@
 // non-keyboard input method, deferred (see memory.md).
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Card, primaryButtonClass } from '../components/ui';
 import { completeSession, loggedSetsForSession } from '../lib/outbox';
 import { computeSessionTotals, type SessionTotals } from '../lib/session';
 
@@ -24,15 +25,15 @@ export default function SessionSummary() {
 
   return (
     <main className="mx-auto max-w-md p-4">
-      <h1 className="text-lg font-medium">Session summary</h1>
+      <h1 className="text-2xl font-semibold">Session summary</h1>
       {totals && (
-        <div className="mt-4 space-y-1 text-sm text-slate-300">
+        <Card className="mt-4 flex flex-col gap-1 text-sm text-ink">
           <p>{totals.doneSets} sets done</p>
           <p>{totals.skippedSets} sets skipped</p>
           <p>{totals.totalVolumeKg.toLocaleString()} kg total volume</p>
-        </div>
+        </Card>
       )}
-      <Link to="/" className="mt-6 inline-block rounded-md bg-emerald-600 px-4 py-3 font-medium">
+      <Link to="/" className={`mt-6 ${primaryButtonClass}`}>
         Done
       </Link>
     </main>

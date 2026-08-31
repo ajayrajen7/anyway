@@ -14,6 +14,15 @@ export async function cacheExerciseLibrary(): Promise<void> {
   await db.exercises.bulkPut(exercises);
 }
 
+// Writes one freshly-created exercise straight into the cache — used right
+// after POST /api/exercises/generate (see AddExercise.tsx) so a real-time
+// LLM-drafted exercise is searchable/pickable immediately, without waiting
+// for the next full cacheExerciseLibrary() refresh (which only happens on
+// Today's next successful load).
+export async function cacheExercise(exercise: Exercise): Promise<void> {
+  await db.exercises.put(exercise);
+}
+
 // Offline substring search over the cached library, mirroring the backend's
 // own search semantics (server/internal/seed/seed.go#List): case-insensitive
 // match on name, blocked rows excluded unless includeBlocked is set. Never

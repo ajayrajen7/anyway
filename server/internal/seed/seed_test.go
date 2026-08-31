@@ -145,3 +145,79 @@ func TestListExcludesBlockedByDefault(t *testing.T) {
 		t.Fatalf("expected running with a block reason, got %+v", withBlocked)
 	}
 }
+
+func TestInsertOneAddsAnLLMExerciseWithoutTouchingTheSeedPath(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	ctx := context.Background()
+
+	inserted, err := seed.InsertOne(ctx, conn, seed.Exercise{
+		Slug: "cable-face-pull", Name: "Cable face pull", Equipment: "cable",
+		Pressure: "low", Impact: "none", IncrementKg: 2.5,
+		Muscles: map[string]float64{"delts_rear": 1.0, "upper_back": 0.5},
+		Source:  "llm",
+	})
+	if err != nil {
+		t.Fatalf("InsertOne: %v", err)
+	}
+	if inserted.ID == 0 {
+		t.Fatalf("expected a real id, got %+v", inserted)
+	}
+
+	all, err := seed.List(ctx, conn, "", true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(all) != 1 || all[0].Source != "llm" {
+		t.Fatalf("expected the one llm-sourced exercise, got %+v", all)
+	}
+}
+
+func TestInsertOneDedupesASlugCollisionInsteadOfOverwriting(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	ctx := context.Background()
+
+	original := seed.Exercise{
+		Slug: "goblet-squat", Name: "Goblet squat", Equipment: "dumbbell",
+		Pressure: "moderate", Impact: "none", IncrementKg: 2.5,
+		Muscles: map[string]float64{"quads": 1.0},
+	}
+	if _, err := seed.Apply(ctx, conn, []seed.Exercise{original}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	// An LLM-guessed slug collides with the already-seeded exercise above —
+	// InsertOne must never overwrite it.
+	dup, err := seed.InsertOne(ctx, conn, seed.Exercise{
+		Slug: "goblet-squat", Name: "Goblet Squat (variant)", Equipment: "kettlebell",
+		Pressure: "moderate", Impact: "none", IncrementKg: 2.5,
+		Muscles: map[string]float64{"quads": 1.0},
+		Source:  "llm",
+	})
+	if err != nil {
+		t.Fatalf("InsertOne: %v", err)
+	}
+	if dup.Slug != "goblet-squat-2" {
+		t.Fatalf("expected the collision to be deduped to goblet-squat-2, got %q", dup.Slug)
+	}
+
+	all, err := seed.List(ctx, conn, "", true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected both exercises to exist, got %+v", all)
+	}
+	for _, e := range all {
+		if e.Slug == "goblet-squat" && e.Source == "llm" {
+			t.Fatalf("the original programme-sourced exercise must not have been overwritten: %+v", e)
+		}
+	}
+}

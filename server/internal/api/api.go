@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -22,13 +23,21 @@ import (
 	"github.com/ajayrajen7/anyway/server/internal/today"
 )
 
+// exerciseGenerator is the one method this package needs from
+// *exercisegen.Client — narrowed to a local interface (rather than
+// importing that package's concrete type) so api_test.go can pass nil or a
+// fake instead of making a real LLM call. See postGenerateExercise.
+type exerciseGenerator interface {
+	Generate(ctx context.Context, name, notes string) (seed.Exercise, error)
+}
+
 // NewRouter's return type is chi.Router, not just http.Handler, so
 // cmd/server can call .NotFound() on it to mount the embedded frontend
 // (internal/webapp) as the SPA fallback for everything /api/* and /healthz
 // don't claim — kept out of this package entirely, since the JSON API
 // surface has no reason to know a frontend exists. chi.Router still
 // satisfies http.Handler, so nothing here or in tests changes.
-func NewRouter(conn *sql.DB, token string) chi.Router {
+func NewRouter(conn *sql.DB, token string, gen exerciseGenerator) chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -56,6 +65,11 @@ func NewRouter(conn *sql.DB, token string) chi.Router {
 		r.Post("/sessions/{id}/add", notImplemented)
 		r.Post("/sessions/{id}/complete", postCompleteSession(conn))
 		r.Get("/exercises", listExercises(conn))
+		// Real-time LLM-drafted exercise creation — the one deliberate
+		// online-only step in this otherwise offline-first app. See
+		// exercisegen's doc comment and memory.md's "real-time exercise
+		// creation" decision.
+		r.Post("/exercises/generate", postGenerateExercise(conn, gen))
 		r.Get("/programme", getProgramme(conn)) // M8 amendment to §B5 — see memory.md
 		r.Post("/morning-check", postMorningCheck(conn))
 		r.Post("/protein", postProtein(conn))
@@ -138,6 +152,51 @@ func listExercises(conn *sql.DB) http.HandlerFunc {
 			exercises = []seed.Exercise{} // never null in the response
 		}
 		json.NewEncoder(w).Encode(exercises)
+	}
+}
+
+// postGenerateExercise implements POST /api/exercises/generate — the one
+// online-only step in an otherwise offline-first app (see exercisegen's
+// doc comment). Body: {"name": "...", "notes": "..."} (notes optional).
+// The drafted record is validated (exercisegen.Generate already runs it
+// through seed.ValidateExercise) and inserted via seed.InsertOne, which
+// never overwrites an existing exercise — a colliding slug is deduped, not
+// clobbered. gen may be nil (ANTHROPIC_API_KEY not configured, or a plain
+// api.NewRouter(conn, token, nil) caller) — this is a 501, not a fatal
+// server error, same "this feature degrades, not the app" shape as
+// backup.OffBoxCopy being nil until wired up.
+func postGenerateExercise(conn *sql.DB, gen exerciseGenerator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if gen == nil {
+			writeJSONError(w, http.StatusNotImplemented, errors.New("exercise generation is not configured (ANTHROPIC_API_KEY unset)"))
+			return
+		}
+		var body struct {
+			Name  string `json:"name"`
+			Notes string `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, err)
+			return
+		}
+		drafted, err := gen.Generate(r.Context(), body.Name, body.Notes)
+		if err != nil {
+			// Bad input, an LLM-side failure, or a validation rejection are
+			// all "the request couldn't be fulfilled", not a server bug —
+			// 502 rather than 500, so the client can tell this apart from
+			// an actual internal error.
+			writeJSONError(w, http.StatusBadGateway, err)
+			return
+		}
+		inserted, err := seed.InsertOne(r.Context(), conn, drafted)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if inserted.Muscles == nil {
+			inserted.Muscles = map[string]float64{}
+		}
+		json.NewEncoder(w).Encode(inserted)
 	}
 }
 

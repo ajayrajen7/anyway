@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -27,6 +28,7 @@ var CanonicalMuscles = map[string]bool{
 
 var validPressure = map[string]bool{"low": true, "moderate": true, "high": true}
 var validImpact = map[string]bool{"none": true, "low": true, "high": true}
+var validSource = map[string]bool{"programme": true, "llm": true}
 
 // Exercise is one seed-file entry (and also the shape returned by List).
 type Exercise struct {
@@ -42,6 +44,11 @@ type Exercise struct {
 	BlockReason *string            `json:"block_reason"`
 	Caution     *string            `json:"caution"`
 	Muscles     map[string]float64 `json:"muscles"`
+	// Where this record came from — 'programme' (the hand-transcribed
+	// docs/prd.md §A5 library) or 'llm' (drafted by exercisegen, see its doc
+	// comment). Empty/absent in a seed file defaults to 'programme' — every
+	// seed/*.json entry predates this field and none needs editing.
+	Source string `json:"source,omitempty"`
 }
 
 // ParseFile reads and validates a seed/exercises.json file. Validation
@@ -70,30 +77,53 @@ func Parse(raw []byte) ([]Exercise, error) {
 	}
 
 	seen := map[string]bool{}
-	for _, e := range exercises {
-		if e.Slug == "" {
-			return nil, fmt.Errorf("exercise %q: slug is required", e.Name)
+	for i, e := range exercises {
+		if e.Source == "" {
+			e.Source = "programme" // every seed/*.json entry predates this field
+			exercises[i] = e
 		}
 		if seen[e.Slug] {
 			return nil, fmt.Errorf("duplicate slug %q", e.Slug)
 		}
 		seen[e.Slug] = true
-		if !validPressure[e.Pressure] {
-			return nil, fmt.Errorf("%s: invalid pressure %q", e.Slug, e.Pressure)
-		}
-		if !validImpact[e.Impact] {
-			return nil, fmt.Errorf("%s: invalid impact %q", e.Slug, e.Impact)
-		}
-		if e.Blocked && (e.BlockReason == nil || *e.BlockReason == "") {
-			return nil, fmt.Errorf("%s: blocked exercises require block_reason", e.Slug)
-		}
-		for muscle := range e.Muscles {
-			if !CanonicalMuscles[muscle] {
-				return nil, fmt.Errorf("%s: unknown muscle group %q", e.Slug, muscle)
-			}
+		if err := ValidateExercise(e); err != nil {
+			return nil, err
 		}
 	}
 	return exercises, nil
+}
+
+// ValidateExercise checks one record against the same rules ParseFile
+// enforces on every seed-file entry — canonical muscle names, valid
+// pressure/impact/source, blocked⇒block_reason — except slug-uniqueness,
+// which is a whole-file concern, not a per-record one. Exported so
+// exercisegen validates an LLM-drafted record through the exact same rules
+// a hand-authored entry has to pass, not a parallel copy of them.
+func ValidateExercise(e Exercise) error {
+	if e.Slug == "" {
+		return fmt.Errorf("exercise %q: slug is required", e.Name)
+	}
+	if !validPressure[e.Pressure] {
+		return fmt.Errorf("%s: invalid pressure %q", e.Slug, e.Pressure)
+	}
+	if !validImpact[e.Impact] {
+		return fmt.Errorf("%s: invalid impact %q", e.Slug, e.Impact)
+	}
+	if e.Source != "" && !validSource[e.Source] {
+		return fmt.Errorf("%s: invalid source %q", e.Slug, e.Source)
+	}
+	if e.Blocked && (e.BlockReason == nil || *e.BlockReason == "") {
+		return fmt.Errorf("%s: blocked exercises require block_reason", e.Slug)
+	}
+	if len(e.Muscles) == 0 {
+		return fmt.Errorf("%s: at least one muscle weight is required", e.Slug)
+	}
+	for muscle := range e.Muscles {
+		if !CanonicalMuscles[muscle] {
+			return fmt.Errorf("%s: unknown muscle group %q", e.Slug, muscle)
+		}
+	}
+	return nil
 }
 
 // Apply upserts exercises (keyed by slug) and replaces their muscle-weight
@@ -107,16 +137,20 @@ func Apply(ctx context.Context, conn *sql.DB, exercises []Exercise) (int, error)
 	defer tx.Rollback()
 
 	for _, e := range exercises {
+		source := e.Source
+		if source == "" {
+			source = "programme"
+		}
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO exercises (slug, name, equipment, pressure, impact, unilateral, increment_kg, blocked, block_reason, caution)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO exercises (slug, name, equipment, pressure, impact, unilateral, increment_kg, blocked, block_reason, caution, source)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(slug) DO UPDATE SET
 				name = excluded.name, equipment = excluded.equipment,
 				pressure = excluded.pressure, impact = excluded.impact,
 				unilateral = excluded.unilateral, increment_kg = excluded.increment_kg,
 				blocked = excluded.blocked, block_reason = excluded.block_reason,
-				caution = excluded.caution
-		`, e.Slug, e.Name, e.Equipment, e.Pressure, e.Impact, e.Unilateral, e.IncrementKg, e.Blocked, e.BlockReason, e.Caution)
+				caution = excluded.caution, source = excluded.source
+		`, e.Slug, e.Name, e.Equipment, e.Pressure, e.Impact, e.Unilateral, e.IncrementKg, e.Blocked, e.BlockReason, e.Caution, source)
 		if err != nil {
 			return 0, fmt.Errorf("upsert %s: %w", e.Slug, err)
 		}
@@ -154,7 +188,7 @@ func Apply(ctx context.Context, conn *sql.DB, exercises []Exercise) (int, error)
 // but never omitted from a *search hit*, since the UI must explain a
 // contraindicated match rather than hide it (prd.md §A3.4).
 func List(ctx context.Context, conn *sql.DB, query string, includeBlocked bool) ([]Exercise, error) {
-	sqlQuery := `SELECT id, slug, name, equipment, pressure, impact, unilateral, increment_kg, blocked, block_reason, caution FROM exercises`
+	sqlQuery := `SELECT id, slug, name, equipment, pressure, impact, unilateral, increment_kg, blocked, block_reason, caution, source FROM exercises`
 	args := []any{}
 	var where []string
 	if query != "" {
@@ -176,7 +210,7 @@ func List(ctx context.Context, conn *sql.DB, query string, includeBlocked bool) 
 	var out []Exercise
 	for rows.Next() {
 		var e Exercise
-		if err := rows.Scan(&e.ID, &e.Slug, &e.Name, &e.Equipment, &e.Pressure, &e.Impact, &e.Unilateral, &e.IncrementKg, &e.Blocked, &e.BlockReason, &e.Caution); err != nil {
+		if err := rows.Scan(&e.ID, &e.Slug, &e.Name, &e.Equipment, &e.Pressure, &e.Impact, &e.Unilateral, &e.IncrementKg, &e.Blocked, &e.BlockReason, &e.Caution, &e.Source); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -210,4 +244,68 @@ func List(ctx context.Context, conn *sql.DB, query string, includeBlocked bool) 
 		}
 	}
 	return out, muscleRows.Err()
+}
+
+// InsertOne adds a single brand-new exercise — used by exercisegen for
+// real-time LLM-drafted additions, never by the seed-file reseed path
+// (Apply, above). Unlike Apply, this never overwrites an existing row: if
+// e.Slug is already taken, it appends "-2", "-3", ... until a free slug is
+// found (an LLM-guessed slug colliding with an existing one, hand-curated
+// or previously LLM-added, should never silently clobber that entry). The
+// exercise is validated first via ValidateExercise, same rules as every
+// other path into this table.
+func InsertOne(ctx context.Context, conn *sql.DB, e Exercise) (Exercise, error) {
+	if err := ValidateExercise(e); err != nil {
+		return Exercise{}, err
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return Exercise{}, err
+	}
+	defer tx.Rollback()
+
+	baseSlug := e.Slug
+	slug := baseSlug
+	for attempt := 2; ; attempt++ {
+		var exists int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM exercises WHERE slug = ?`, slug).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+			break // slug is free
+		} else if err != nil {
+			return Exercise{}, fmt.Errorf("check slug %s: %w", slug, err)
+		}
+		slug = fmt.Sprintf("%s-%d", baseSlug, attempt)
+	}
+	e.Slug = slug
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO exercises (slug, name, equipment, pressure, impact, unilateral, increment_kg, blocked, block_reason, caution, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, e.Slug, e.Name, e.Equipment, e.Pressure, e.Impact, e.Unilateral, e.IncrementKg, e.Blocked, e.BlockReason, e.Caution, e.Source)
+	if err != nil {
+		return Exercise{}, fmt.Errorf("insert %s: %w", e.Slug, err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Exercise{}, fmt.Errorf("get id for %s: %w", e.Slug, err)
+	}
+	e.ID = id
+
+	muscles := make([]string, 0, len(e.Muscles))
+	for m := range e.Muscles {
+		muscles = append(muscles, m)
+	}
+	sort.Strings(muscles)
+	for _, m := range muscles {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO exercise_muscles (exercise_id, muscle, weight) VALUES (?, ?, ?)
+		`, id, m, e.Muscles[m]); err != nil {
+			return Exercise{}, fmt.Errorf("insert muscle %s for %s: %w", m, e.Slug, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Exercise{}, err
+	}
+	return e, nil
 }

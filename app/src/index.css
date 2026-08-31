@@ -5,6 +5,25 @@
   color-scheme: dark;
 }
 
+/* Design tokens (UX redesign, M12) — matches the owner's reference
+ * screenshots: near-black ground, a warm orange accent for primary actions
+ * and active state, cards a shade lighter than the page. Tailwind v4's
+ * CSS-first @theme turns each of these into a matching utility class
+ * (bg-surface, text-ink-muted, border-border, ...) with no config file.
+ * These are approximations of the reference's actual palette, not sampled
+ * pixel values — the same "documented inference, not a transcription"
+ * caveat M1's increment_kg values carry (see memory.md). */
+@theme {
+  --color-bg: #0b0b0f;
+  --color-surface: #18181f;
+  --color-surface-alt: #212129;
+  --color-accent: #ff5a36;
+  --color-accent-soft: #3a2418;
+  --color-ink: #f5f5f7;
+  --color-ink-muted: #9a9aa5;
+  --color-border: #27272f;
+}
+
 html,
 body,
 #root {
@@ -13,8 +32,8 @@ body,
 
 body {
   margin: 0;
-  background: #0f172a;
-  color: #f1f5f9;
+  background: var(--color-bg);
+  color: var(--color-ink);
   font: 16px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }

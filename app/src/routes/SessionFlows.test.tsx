@@ -5,13 +5,20 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import AddExercise from './AddExercise';
+import { ApiError } from '../lib/api';
 import { db } from '../lib/db';
 import SessionExercise from './SessionExercise';
 import SessionOverview from './SessionOverview';
 import SwapSheet from './SwapSheet';
 import type { CachedToday, Exercise, TodaySlot } from '../lib/types';
+
+const { generateExerciseMock } = vi.hoisted(() => ({ generateExerciseMock: vi.fn() }));
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return { ...actual, generateExercise: generateExerciseMock };
+});
 
 function makeSlot(overrides: Partial<TodaySlot> = {}): TodaySlot {
   return {
@@ -70,6 +77,8 @@ afterEach(async () => {
   await db.outbox.clear();
   await db.sessionOverlay.clear();
   await db.exercises.clear();
+  generateExerciseMock.mockReset();
+  Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true });
 });
 
 describe('Swap flow (from the single-exercise screen)', () => {
@@ -175,6 +184,80 @@ describe('Add-exercise flow (from the exercise list)', () => {
 
     await screen.findByLabelText('Search exercises');
     expect(await db.sessionOverlay.get(42)).toBeUndefined();
+  });
+});
+
+describe('Create-exercise flow (from Add-exercise\'s search sheet)', () => {
+  it('generates, caches, and flows straight into attribution when not blocked', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot()]);
+    generateExerciseMock.mockResolvedValue(
+      fullExercise({ id: 99, name: 'Cable face pull', source: 'llm', muscles: { delts_rear: 1.0 }, caution: 'Keep elbows high.' }),
+    );
+    renderApp('/session/42');
+
+    await user.click(await screen.findByRole('link', { name: '+ Add exercise' }));
+    await user.type(await screen.findByLabelText('Search exercises'), 'face pull');
+    await user.click(await screen.findByRole('button', { name: /Create "face pull"/ }));
+
+    await screen.findByText('Whose call?');
+    expect(await screen.findByText(/AI-estimated/)).toBeInTheDocument();
+    expect(screen.getByText(/Keep elbows high\./)).toBeInTheDocument();
+    expect(generateExerciseMock).toHaveBeenCalledWith('face pull');
+
+    // Actually cached — the next search should find it with no further mock call.
+    const cached = await db.exercises.get(99);
+    expect(cached?.name).toBe('Cable face pull');
+
+    await user.click(screen.getByRole('button', { name: 'Mine' }));
+    await waitFor(async () => {
+      const overlay = await db.sessionOverlay.get(42);
+      expect(overlay?.added).toHaveLength(1);
+    });
+  });
+
+  it('shows a blocked LLM result greyed with its reason, never reaching attribution', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot()]);
+    generateExerciseMock.mockResolvedValue(
+      fullExercise({ id: 98, name: 'Kettlebell swing', source: 'llm', blocked: true, block_reason: 'Braced hinge — high intra-abdominal pressure' }),
+    );
+    renderApp('/session/42');
+
+    await user.click(await screen.findByRole('link', { name: '+ Add exercise' }));
+    await user.type(await screen.findByLabelText('Search exercises'), 'kettlebell swing');
+    await user.click(await screen.findByRole('button', { name: /Create "kettlebell swing"/ }));
+
+    await screen.findByText(/Braced hinge — high intra-abdominal pressure/);
+    expect(screen.queryByText('Whose call?')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kettlebell swing' })).not.toBeInTheDocument();
+  });
+
+  it('shows a clear error and never adds anything when generation fails', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot()]);
+    generateExerciseMock.mockRejectedValue(new ApiError(502, 'model produced an invalid exercise'));
+    renderApp('/session/42');
+
+    await user.click(await screen.findByRole('link', { name: '+ Add exercise' }));
+    await user.type(await screen.findByLabelText('Search exercises'), 'something odd');
+    await user.click(await screen.findByRole('button', { name: /Create "something odd"/ }));
+
+    await screen.findByText(/Couldn't create that exercise/);
+    expect(await db.exercises.toArray()).toHaveLength(0);
+  });
+
+  it('offers no create action while offline', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot()]);
+    Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true });
+    renderApp('/session/42');
+
+    await user.click(await screen.findByRole('link', { name: '+ Add exercise' }));
+    await user.type(await screen.findByLabelText('Search exercises'), 'face pull');
+
+    await screen.findByText(/needs a connection/);
+    expect(screen.queryByRole('button', { name: /Create/ })).not.toBeInTheDocument();
   });
 });
 

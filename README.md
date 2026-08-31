@@ -20,6 +20,8 @@ cd server && ANYWAY_API_TOKEN=devtoken go run ./cmd/server
 
 The server also runs a nightly `VACUUM INTO` backup (docs/architecture.md §B2) — `ANYWAY_BACKUP_DIR` (default `backups`), `ANYWAY_BACKUP_HOUR` (default `3`, local time), `ANYWAY_BACKUP_KEEP` (default `30`, oldest pruned first). No off-box copy is wired up yet — see `server/internal/backup`'s doc comment and `memory.md`.
 
+**Real-time exercise creation** (M12, `server/internal/exercisegen`) needs `ANTHROPIC_API_KEY` — a cheap-model (Claude Haiku 4.5) call that drafts a new exercise's muscle weights/pressure/impact when the Add-exercise search comes up empty. Optional: with no key set, the server runs exactly as before and `POST /api/exercises/generate` answers 501 rather than failing to start. This is the one deliberate online-only step in an otherwise offline-first app — see `docs/architecture.md` §B2's amendment and `memory.md`.
+
 ## Deploying
 
 Hosting is **Railway**, one binary embedding the built frontend (no separate frontend host, no CORS needed in production — decided alongside M10, see `memory.md`). Railway builds directly from this repo's `Dockerfile` on every push — no separate CI build step, no container registry, no deploy-hook plumbing. (Fly.io was the original choice, then Render — both changed for reasons unrelated to this repo's own code; see `memory.md` for the full trail.)
@@ -29,7 +31,7 @@ Hosting is **Railway**, one binary embedding the built frontend (no separate fro
 **One-time setup** (railway.app → New Project → Deploy from GitHub repo → this repo):
 - Railway should detect the `Dockerfile` at the repo root automatically
 - Add a **persistent volume** (Railway calls this a Volume), mounted at `/data`
-- Environment variables: `ANYWAY_ADDR=:8080`, `ANYWAY_DB_PATH=/data/anyway.db`, `ANYWAY_BACKUP_DIR=/data/backups`, `ANYWAY_BACKUP_HOUR=3`, `ANYWAY_BACKUP_KEEP=30`, and `ANYWAY_API_TOKEN` (any random string you generate — this is the only value the frontend and backend need to agree on, and it's set here once, nowhere else)
+- Environment variables: `ANYWAY_ADDR=:8080`, `ANYWAY_DB_PATH=/data/anyway.db`, `ANYWAY_BACKUP_DIR=/data/backups`, `ANYWAY_BACKUP_HOUR=3`, `ANYWAY_BACKUP_KEEP=30`, `ANYWAY_API_TOKEN` (any random string you generate — this is the only value the frontend and backend need to agree on, and it's set here once, nowhere else), and optionally `ANTHROPIC_API_KEY` (real-time exercise creation — see above; omit to leave that one feature off)
 - Health check path: `/healthz`
 
 Push to `main` and Railway rebuilds and redeploys automatically from then on. **No manual seeding step needed** — a database with no exercises yet auto-seeds the full exercise library and the Phase 1 programme on first boot (`server/internal/bootstrap`), from the same `seed/*.json` files `cmd/seed`/`cmd/programme` use for local dev. It runs once, ever, per database: once real data exists it never touches anything again, so this is exactly as safe on every subsequent restart/redeploy as it is on the first.

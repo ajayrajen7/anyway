@@ -8,10 +8,13 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/ajayrajen7/anyway/server/internal/api"
 	"github.com/ajayrajen7/anyway/server/internal/backup"
 	"github.com/ajayrajen7/anyway/server/internal/bootstrap"
 	"github.com/ajayrajen7/anyway/server/internal/db"
+	"github.com/ajayrajen7/anyway/server/internal/exercisegen"
 	"github.com/ajayrajen7/anyway/server/internal/webapp"
 )
 
@@ -57,7 +60,28 @@ func main() {
 	backupKeep := envIntOr("ANYWAY_BACKUP_KEEP", 30)
 	go backup.RunNightly(context.Background(), conn, backupDir, backupHour, backupKeep, nil, log.Printf)
 
-	router := api.NewRouter(conn, token)
+	// Real-time exercise creation (see internal/exercisegen) needs
+	// ANTHROPIC_API_KEY — degrades to a clear 501 on that one endpoint if
+	// unset, same "this feature degrades, not the app" shape as the
+	// backup's off-box copy. exercisegen.New() doesn't itself validate the
+	// key is present (the SDK resolves credentials lazily); it's still
+	// worth constructing unconditionally so a key added later (no redeploy
+	// needed on most hosts, just an env var change + restart) works
+	// immediately.
+	// Deliberately branching on the raw *exercisegen.Client, not handing
+	// api.NewRouter a possibly-nil *exercisegen.Client to wrap itself: an
+	// interface variable holding a nil pointer is not itself nil (the
+	// classic Go nil-interface-vs-nil-pointer trap) — postGenerateExercise's
+	// own `gen == nil` check would never see it, and it'd panic on the nil
+	// receiver instead of cleanly 501ing. Passing literal nil keeps the
+	// interface itself nil.
+	var router chi.Router
+	if os.Getenv("ANTHROPIC_API_KEY") != "" {
+		router = api.NewRouter(conn, token, exercisegen.New())
+	} else {
+		log.Print("ANTHROPIC_API_KEY not set — real-time exercise creation disabled (POST /api/exercises/generate will 501)")
+		router = api.NewRouter(conn, token, nil)
+	}
 	// SPA fallback: any path /api/* and /healthz don't claim serves the
 	// embedded frontend build (internal/webapp) — the single-binary,
 	// same-origin production deploy decided alongside M10's hosting choice.

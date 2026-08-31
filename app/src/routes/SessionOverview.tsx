@@ -5,6 +5,7 @@
 // same reasoning as the old SessionRunner's nested sheets (M5).
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
+import { primaryButtonClass, secondaryButtonClass } from '../components/ui';
 import { getCachedToday } from '../lib/todayCache';
 import { getOverlay, removeExercise } from '../lib/overlay';
 import { loggedSetsForSession } from '../lib/outbox';
@@ -39,14 +40,14 @@ export default function SessionOverview() {
   if (cached === undefined || overlay === undefined) {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">Loading…</p>
+        <p className="text-sm text-ink-muted">Loading…</p>
       </main>
     );
   }
   if (cached === null) {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-muted">
           Session not available offline yet — open Today with a connection first.
         </p>
       </main>
@@ -69,14 +70,14 @@ export default function SessionOverview() {
 
   return (
     <main className="mx-auto max-w-md p-4">
-      <h1 className="text-lg font-medium">{cached.data.day_template.name}</h1>
-      <p className="text-sm text-slate-400">{slots.length} exercises</p>
+      <h1 className="text-2xl font-semibold">{cached.data.day_template.name}</h1>
+      <p className="mt-1 text-sm text-ink-muted">{slots.length} exercises</p>
 
       {firstIncomplete && (
         <button
           type="button"
           onClick={() => navigate(`exercise/${firstIncomplete.key}`)}
-          className="mt-4 w-full rounded-md bg-emerald-600 py-3 font-medium"
+          className={`mt-4 w-full ${primaryButtonClass}`}
         >
           Start
         </button>
@@ -96,10 +97,10 @@ export default function SessionOverview() {
       </ul>
 
       <div className="mt-4 flex gap-2">
-        <Link to="add" className="flex-1 rounded-md bg-slate-800 py-3 text-center text-sm">
+        <Link to="add" className={`flex-1 text-sm ${secondaryButtonClass}`}>
           + Add exercise
         </Link>
-        <Link to={`/session/${sessionId}/done`} className="flex-1 rounded-md bg-slate-800 py-3 text-center text-sm">
+        <Link to={`/session/${sessionId}/done`} className={`flex-1 text-sm ${secondaryButtonClass}`}>
           Finish session →
         </Link>
       </div>
@@ -125,20 +126,20 @@ function SlotRow({
   onDelete: () => void;
 }) {
   return (
-    <li className={`flex items-center justify-between gap-2 rounded-md px-3 py-3 ${status === 'done' ? 'bg-slate-800/50' : 'bg-slate-800'}`}>
+    <li className={`flex items-center justify-between gap-2 rounded-2xl px-3 py-3 ${status === 'done' ? 'bg-surface/60' : 'bg-surface'}`}>
       <button type="button" onClick={onOpen} className="flex-1 text-left">
-        <span className={status === 'done' ? 'text-slate-500 line-through' : ''}>{slot.exercise.name}</span>
-        <span className="ml-2 text-xs text-slate-400">
+        <span className={status === 'done' ? 'text-ink-muted line-through' : 'text-ink'}>{slot.exercise.name}</span>
+        <span className="ml-2 text-xs text-ink-muted">
           {slot.sets} × {slot.reps}
         </span>
-        {STATUS_LABEL[status] && <span className="ml-2 text-xs text-emerald-500">{STATUS_LABEL[status]}</span>}
+        {STATUS_LABEL[status] && <span className="ml-2 text-xs text-accent">{STATUS_LABEL[status]}</span>}
       </button>
       {onSwap && (
-        <button type="button" aria-label={`Swap ${slot.exercise.name}`} onClick={onSwap} className="px-2 text-slate-500">
+        <button type="button" aria-label={`Swap ${slot.exercise.name}`} onClick={onSwap} className="px-2 text-ink-muted">
           ⇄
         </button>
       )}
-      <button type="button" aria-label={`Delete ${slot.exercise.name}`} onClick={onDelete} className="px-2 text-slate-500">
+      <button type="button" aria-label={`Delete ${slot.exercise.name}`} onClick={onDelete} className="px-2 text-ink-muted">
         🗑
       </button>
     </li>
