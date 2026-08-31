@@ -28,6 +28,26 @@ if ('serviceWorker' in navigator) {
     reloading = true;
     window.location.reload();
   });
+
+  // The controllerchange listener above only fires once the browser has
+  // *already* noticed a new service worker exists — and vite-plugin-pwa's
+  // auto-injected registerSW.js only ever checks for one, once, on the
+  // very first page load. Nothing after that asks again: real-world
+  // testing on this session found the app could sit on a stale deploy
+  // indefinitely on a phone (iOS Safari in particular doesn't reliably
+  // re-check a service worker on its own). Force a real check every time
+  // the app comes back into the foreground — reopening a pinned tab,
+  // switching back from another app — so a deploy made while it was in
+  // the background gets picked up the next time it's actually used, not
+  // whenever the browser's own opportunistic timing happens to notice.
+  // registration.update() is a safe no-op if nothing's changed.
+  const checkForUpdate = () => {
+    navigator.serviceWorker.getRegistration().then((reg) => reg?.update());
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkForUpdate();
+  });
+  window.addEventListener('focus', checkForUpdate);
 }
 
 createRoot(document.getElementById('root')!).render(
