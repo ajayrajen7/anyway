@@ -66,19 +66,27 @@ export type MorningCheck = z.infer<typeof MorningCheck>;
 
 // --- Protein / mobility / cardio (M7, prd.md §A3.2/§A3.6) ---
 
+// UX addition (post-M12): `grams` is the real manually-entered value (like
+// Steps — a stepper, not Yes/No); `hit` (grams >= 120) is still derived and
+// stored so Week Plan's existing day-completion grading needs no changes.
+// Optional, not required: a pre-this-change fixture/cached row has no
+// `grams` field at all — same "don't break every existing literal" reasoning
+// as Exercise.source (see types.ts's note there).
 export const ProteinLog = z.object({
   date: z.string(),
   hit: z.boolean(),
+  grams: z.number().optional(),
 });
 export type ProteinLog = z.infer<typeof ProteinLog>;
 
-// Presence = done. There is deliberately no `done: false` row — unchecking
-// the box deletes the row rather than writing a negative value (mirrors the
-// "absence, never a default" discipline used for morning_checks, applied
-// here because a checkbox's natural semantics are "logged" vs "not", not a
-// meaningful yes/no like protein's).
+// UX addition (post-M12): mobility is now a manual 0-10 min entry on a
+// lifting day (like Steps), not a plain checkbox — see dailyLogs.ts. The
+// Wed/Sat "Full mobility" checkbox (Today.tsx#CardioMobilityDay) still uses
+// this same table, now always carrying a real duration too. `duration_min`
+// is optional for the same reason `grams` is above.
 export const MobilityLog = z.object({
   date: z.string(),
+  duration_min: z.number().optional(),
 });
 export type MobilityLog = z.infer<typeof MobilityLog>;
 

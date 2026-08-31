@@ -14,37 +14,46 @@ async function appendOutbox(entity: string, entityId: string, payload: unknown):
   });
 }
 
-// --- Protein — a real yes/no, both values meaningful (unlike mobility below) ---
+// --- Protein — a manual grams entry (UX addition, post-M12), like Steps ---
+// `hit` (grams >= 120, the programme's stated daily target) is derived here
+// and stored alongside `grams` so Week Plan's existing day-completion
+// grading (src/lib/week.ts#computeDayCompletion) needs no changes at all.
+const PROTEIN_TARGET_GRAMS = 120;
 
 export async function getProteinLog(date: string) {
   return db.proteinLogs.get(date);
 }
 
-export async function logProtein(date: string, hit: boolean): Promise<void> {
+export async function logProteinGrams(date: string, grams: number): Promise<void> {
+  const hit = grams >= PROTEIN_TARGET_GRAMS;
   await db.transaction('rw', db.proteinLogs, db.outbox, async () => {
-    await db.proteinLogs.put({ date, hit });
-    await appendOutbox('protein_log', date, { date, hit });
+    await db.proteinLogs.put({ date, grams, hit });
+    await appendOutbox('protein_log', date, { date, grams, hit });
   });
 }
 
-// --- Mobility — presence-only. There is no "log false"; unchecking deletes. ---
+// --- Mobility — a manual 0-10 min entry (UX addition, post-M12), like Steps ---
+// The Wed/Sat "Full mobility" checkbox (Today.tsx#CardioMobilityDay) still
+// calls this same function — it just defaults to the standard 10-min
+// routine's duration when no explicit value is given, rather than writing
+// pure presence.
+export async function logMobility(date: string, minutes = 10): Promise<void> {
+  await db.transaction('rw', db.mobilityLogs, db.outbox, async () => {
+    await db.mobilityLogs.put({ date, duration_min: minutes });
+    await appendOutbox('mobility_log', date, { date, duration_min: minutes });
+  });
+}
 
 export async function getMobilityLog(date: string) {
   return db.mobilityLogs.get(date);
 }
 
-export async function logMobility(date: string): Promise<void> {
-  await db.transaction('rw', db.mobilityLogs, db.outbox, async () => {
-    await db.mobilityLogs.put({ date });
-    await appendOutbox('mobility_log', date, { date });
-  });
-}
-
 export async function clearMobilityLog(date: string): Promise<void> {
   await db.mobilityLogs.delete(date);
-  // No outbox entry for the delete itself — M9's sync worker only ever
-  // needs to know "mobility done" as a positive fact; there's nothing to
-  // retract server-side once nothing was ever sent for an un-checked day.
+  // No outbox entry for the delete itself — same reasoning as before this
+  // change: still only used by CardioMobilityDay's checkbox toggle-off, and
+  // the sync worker only ever needs "mobility done" (now with a duration)
+  // as a positive fact.
 }
 
 // --- Cardio — one row per (date, modality) by convention, enforced here ---

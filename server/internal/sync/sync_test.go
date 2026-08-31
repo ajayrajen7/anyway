@@ -124,6 +124,43 @@ func TestMobilityAlwaysWritesDoneTrue(t *testing.T) {
 	}
 }
 
+// UX addition (post-M12): mobility is now a manual 0-10 min entry (like
+// Steps) — the second write with an updated duration must replace, not
+// accumulate, matching the client's own upsert-by-date pattern.
+func TestMobilityUpsertsDuration(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	if err := syncpkg.Mobility(ctx, conn, syncpkg.MobilityPayload{Date: "2026-01-05", DurationMin: 3}); err != nil {
+		t.Fatalf("first Mobility: %v", err)
+	}
+	if err := syncpkg.Mobility(ctx, conn, syncpkg.MobilityPayload{Date: "2026-01-05", DurationMin: 7}); err != nil {
+		t.Fatalf("second Mobility: %v", err)
+	}
+	var count, duration int
+	conn.QueryRow(`SELECT COUNT(*), MAX(duration_min) FROM mobility_logs WHERE date = ?`, "2026-01-05").Scan(&count, &duration)
+	if count != 1 || duration != 7 {
+		t.Fatalf("expected exactly 1 row at 7 min, got count=%d duration=%d", count, duration)
+	}
+}
+
+// UX addition (post-M12): protein is now a manual grams entry (like Steps)
+// — Hit is still derived+sent by the client and stored as-is, so Week
+// Plan's existing grading needs no server-side change.
+func TestProteinStoresGramsAndDerivedHit(t *testing.T) {
+	conn := openTestDB(t)
+	if err := syncpkg.Protein(t.Context(), conn, syncpkg.ProteinPayload{Date: "2026-01-05", Grams: 140, Hit: true}); err != nil {
+		t.Fatalf("Protein: %v", err)
+	}
+	var grams int
+	var hit bool
+	if err := conn.QueryRow(`SELECT grams, hit FROM protein_logs WHERE date = ?`, "2026-01-05").Scan(&grams, &hit); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if grams != 140 || !hit {
+		t.Fatalf("expected grams=140 hit=true, got grams=%d hit=%v", grams, hit)
+	}
+}
+
 func TestCardioReplacesRatherThanAccumulates(t *testing.T) {
 	conn := openTestDB(t)
 	ctx := t.Context()

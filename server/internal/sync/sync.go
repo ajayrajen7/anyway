@@ -91,35 +91,42 @@ func MorningCheck(ctx context.Context, conn execer, p MorningCheckPayload) error
 
 // --- protein_log ---
 
+// ProteinPayload (UX addition, post-M12): Grams is now the real manually-
+// entered value (like Steps); Hit is derived client-side from grams >= 120
+// and still sent/stored so Week Plan's existing day-completion grading
+// (src/lib/week.ts#computeDayCompletion) needs no changes at all.
 type ProteinPayload struct {
-	Date string `json:"date"`
-	Hit  bool   `json:"hit"`
+	Date  string `json:"date"`
+	Grams int    `json:"grams"`
+	Hit   bool   `json:"hit"`
 }
 
 func Protein(ctx context.Context, conn execer, p ProteinPayload) error {
 	_, err := conn.ExecContext(ctx, `
-		INSERT INTO protein_logs (date, hit) VALUES (?, ?)
-		ON CONFLICT(date) DO UPDATE SET hit = excluded.hit
-	`, p.Date, p.Hit)
+		INSERT INTO protein_logs (date, grams, hit) VALUES (?, ?, ?)
+		ON CONFLICT(date) DO UPDATE SET grams = excluded.grams, hit = excluded.hit
+	`, p.Date, p.Grams, p.Hit)
 	return err
 }
 
 // --- mobility_log ---
 
-// MobilityPayload is presence-only (app/src/lib/types.ts#MobilityLog carries
-// no field beyond `date` — see dailyLogs.ts: unchecking deletes the local
-// row rather than writing `done: false`). `mobility_logs.done` exists in the
-// schema (architecture.md §B3) purely so the column can hold a real value;
-// every row this ever writes has done = 1.
+// MobilityPayload (UX addition, post-M12): DurationMin is now a real
+// manually-entered 0-10 min value on a lifting day (like Steps), not
+// presence-only. The Wed/Sat "Full mobility" checkbox (CardioMobilityDay)
+// still calls this same route — it just always sends a real duration now
+// (defaulting to 10, see dailyLogs.ts#logMobility) instead of nothing.
+// `done` is kept alongside for anything that still reads pure presence.
 type MobilityPayload struct {
-	Date string `json:"date"`
+	Date        string `json:"date"`
+	DurationMin int    `json:"duration_min"`
 }
 
 func Mobility(ctx context.Context, conn execer, p MobilityPayload) error {
 	_, err := conn.ExecContext(ctx, `
-		INSERT INTO mobility_logs (date, done) VALUES (?, 1)
-		ON CONFLICT(date) DO UPDATE SET done = 1
-	`, p.Date)
+		INSERT INTO mobility_logs (date, done, duration_min) VALUES (?, 1, ?)
+		ON CONFLICT(date) DO UPDATE SET done = 1, duration_min = excluded.duration_min
+	`, p.Date, p.DurationMin)
 	return err
 }
 

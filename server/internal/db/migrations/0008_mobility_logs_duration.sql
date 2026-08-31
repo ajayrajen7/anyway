@@ -1,0 +1,11 @@
+-- Mobility becomes a manual 0-10 min entry on a lifting day (like Steps),
+-- not a plain checkbox — the Wed/Sat "Full mobility" checkbox keeps using
+-- this same table/route, now just always writing a real duration alongside
+-- `done` rather than `done` alone. See app/src/lib/dailyLogs.ts and
+-- memory.md's "manual entry" decision.
+--
+-- Non-idempotent on re-run (SQLite has no ADD COLUMN IF NOT EXISTS) — same
+-- shape as 0003/0007, already tolerated by db.go's migrate() loop. Kept in
+-- its own file (not combined with 0009's protein ALTER) so a duplicate-
+-- column error on this statement can't also skip that one in the same Exec.
+ALTER TABLE mobility_logs ADD COLUMN duration_min INTEGER NOT NULL DEFAULT 0;

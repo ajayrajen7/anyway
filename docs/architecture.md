@@ -123,8 +123,11 @@ CREATE TABLE morning_checks (
   pain TEXT NOT NULL CHECK (pain IN ('none','background','noticeable','limiting'))
 );
 
-CREATE TABLE protein_logs(date TEXT PRIMARY KEY, hit INTEGER NOT NULL);
-CREATE TABLE mobility_logs(date TEXT PRIMARY KEY, done INTEGER NOT NULL);
+-- grams/duration_min added post-M12 (owner: manual entry, like Steps, not
+-- Yes/No or a checkbox) — hit/done are still derived+stored so Week Plan's
+-- day-completion grading needed no changes. See §B5's amendment below.
+CREATE TABLE protein_logs(date TEXT PRIMARY KEY, hit INTEGER NOT NULL, grams INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE mobility_logs(date TEXT PRIMARY KEY, done INTEGER NOT NULL, duration_min INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE cardio_logs (
   id INTEGER PRIMARY KEY, date TEXT NOT NULL,
   modality TEXT NOT NULL, duration_min INTEGER NOT NULL
@@ -213,7 +216,9 @@ Every write carries a client-generated UUID so outbox replays are idempotent.
 
 Also in M9:
 - **`POST /api/sync`** is now real: body is a JSON array of `{entity, entity_id, payload}` (the shape of one outbox row, minus `id`/`created_at`/`synced_at`); response is a same-length array of `{entity, entity_id, ok, error?}`. One bad entry never fails the batch — each is applied independently (`server/internal/sync#Drain`), and the client (`src/lib/sync.ts`) marks its own outbox rows synced only for the entries the response reports `ok`.
-- **`POST /api/mobility`** is a new route, not in this document's original list — a gap noted in M7's `memory.md` (mobility has been logged client-side, with an outbox entity and everything, since M7, with nowhere real to sync to). Body: `{date}`; always writes `mobility_logs.done = 1` — there is no `done: false` to write, matching the client's own presence-only model (§B3, `mobility_logs`).
+- **`POST /api/mobility`** is a new route, not in this document's original list — a gap noted in M7's `memory.md` (mobility has been logged client-side, with an outbox entity and everything, since M7, with nowhere real to sync to). Body: `{date}`; always writes `mobility_logs.done = 1` — there is no `done: false` to write, matching the client's own presence-only model (§B3, `mobility_logs`). **Amendment (post-M12):** body is now `{date, duration_min}` — mobility is a manual 0-10 min entry on a lifting day (like Steps), not a plain checkbox; `done` is still always written `1` alongside it, and the Wed/Sat "Full mobility" checkbox keeps using this same route (defaulting to a 10-min duration when it doesn't send an explicit one).
+
+**Amendment (post-M12):** **`POST /api/protein`**'s body is now `{date, grams, hit}` — protein is a manual grams entry (like Steps), not Yes/No. `hit` (`grams >= 120`) is derived client-side and still sent/stored as-is, so Week Plan's day-completion grading (`src/lib/week.ts#computeDayCompletion`) needed no changes at all. The evening-only gate (`isAfter6pm`) is unchanged — the entry still only shows after 18:00.
 - **`POST /api/sessions/:id/sets/:sid/skip`** and **`POST /api/sessions/:id/add`** stay unimplemented — deliberately, not a gap. The client never has a create-then-patch flow for a set (`SessionRunner` logs each commit as one complete `logged_sets` row via a single `logged_set` outbox entity — a skip is just `status: 'skipped'` on that same write), and swap/add-exercise bookkeeping (`SessionOverlay`, M5) is local-only by design: every set actually logged against a swapped/added exercise already carries its own `provenance` in the synced `logged_sets` row, so there is nothing left for these two routes to persist.
 - **Idempotency for `logged_set`** is an upsert on the new `client_uuid` unique index (`ON CONFLICT(client_uuid) DO NOTHING`) — this guards against a *retried* sync POST creating a duplicate row, not against editing an already-logged set: the client never revises a committed set through this path, so a second `client_uuid` for the same `(session_id, exercise_id, set_index)` is a deliberate new history entry, not a duplicate. Every other entity (`morning_check`, `protein_log`, `mobility_log`, `steps_log`) is keyed by its own natural key (a date, or date+modality for `cardio_log`) and upserts/replaces on that — idempotent by construction, no UUID needed.
 - **`GET /api/export` (M10) is real** — a full JSON dump of every table (`server/internal/export`, a generic `SELECT *` over a fixed table whitelist rather than one struct per table, so it reflects the schema as-is including future columns without needing a matching update here). **UX refactor:** the old `weigh_ins`-only Vault gate on this route is gone along with the feature — every table dumps unconditionally now.

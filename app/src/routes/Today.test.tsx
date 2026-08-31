@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -108,17 +108,29 @@ describe('Today screen', () => {
     expect(await screen.findByText(/no active phase/i)).toBeInTheDocument();
   });
 
-  it('shows a Mobility checkbox on a lifting day, and checking it persists', async () => {
+  it('shows a Mobility stepper (0-10 min) on a lifting day and persists on tap', async () => {
     const user = userEvent.setup();
     getTodayMock.mockResolvedValue(liftingDay);
     renderToday();
 
-    const checkbox = await screen.findByRole('checkbox', { name: 'Mobility (10 min)' });
-    expect(checkbox).not.toBeChecked();
+    await screen.findByText('Mobility');
+    expect(screen.getByText('0 min')).toBeInTheDocument();
 
-    await user.click(checkbox);
-    await waitFor(() => expect(checkbox).toBeChecked());
-    expect(await db.mobilityLogs.get('2026-01-05')).toEqual({ date: '2026-01-05' });
+    await user.click(screen.getByRole('button', { name: 'Increase mobility minutes' }));
+    expect(screen.getByText('1 min')).toBeInTheDocument();
+    expect(await db.mobilityLogs.get('2026-01-05')).toEqual({ date: '2026-01-05', duration_min: 1 });
+  });
+
+  it('caps the mobility stepper at 10 min', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue(liftingDay);
+    renderToday();
+
+    const increase = await screen.findByRole('button', { name: 'Increase mobility minutes' });
+    for (let i = 0; i < 12; i++) {
+      await user.click(increase);
+    }
+    expect(screen.getByText('10 min')).toBeInTheDocument();
   });
 
   it('shows a Steps stepper on any day and persists on tap', async () => {
@@ -139,18 +151,24 @@ describe('Today screen', () => {
     getTodayMock.mockResolvedValue(liftingDay);
     renderToday();
     await screen.findByRole('heading', { name: 'Monday' });
-    expect(screen.queryByText('Protein — hit 120g?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Protein')).not.toBeInTheDocument();
   });
 
-  it('shows a working protein Yes/No row after 18:00', async () => {
+  it('shows a working protein grams stepper after 18:00, deriving hit from the 120g target', async () => {
     isAfter6pmMock.mockReturnValue(true);
     const user = userEvent.setup();
     getTodayMock.mockResolvedValue(liftingDay);
     renderToday();
-    await screen.findByText('Protein — hit 120g?');
-    await user.click(screen.getByRole('button', { name: 'No' }));
+    await screen.findByText('Protein');
+    expect(screen.getByText('0 g')).toBeInTheDocument();
 
-    expect(await db.proteinLogs.get('2026-01-05')).toEqual({ date: '2026-01-05', hit: false });
+    const increase = screen.getByRole('button', { name: 'Increase protein grams' });
+    for (let i = 0; i < 13; i++) {
+      await user.click(increase); // 13 × 10g = 130g, over the 120g target
+    }
+
+    expect(screen.getByText('130 g')).toBeInTheDocument();
+    expect(await db.proteinLogs.get('2026-01-05')).toEqual({ date: '2026-01-05', grams: 130, hit: true });
   });
 
   it('on a cardio_mobility day (Wed), shows the cross-trainer checkbox defaulting to 20 min and logs on check', async () => {
@@ -221,7 +239,7 @@ describe('Today screen', () => {
     await user.click(screen.getByRole('button', { name: 'Done' })); // tap 3
 
     expect(await screen.findByText('Done for today.')).toBeInTheDocument();
-    expect(await db.mobilityLogs.get('2026-01-07')).toEqual({ date: '2026-01-07' });
+    expect(await db.mobilityLogs.get('2026-01-07')).toEqual({ date: '2026-01-07', duration_min: 10 });
   });
 
   it('View expands the 12-item mobility checklist (ticks are not persisted)', async () => {

@@ -19,7 +19,7 @@ import {
   getStepsLog,
   logCardio,
   logMobility,
-  logProtein,
+  logProteinGrams,
   logSteps,
 } from '../lib/dailyLogs';
 import { isAfter6pm, localDateKey } from '../lib/date';
@@ -145,85 +145,98 @@ function TodayCard({ data }: { data: TodayResponse }) {
           </Link>
         )}
       </Card>
-      <MobilityCheckbox date={date} />
+      <MobilityRow date={date} />
       <StepsRow date={date} />
       {isAfter6pm() && <ProteinRow date={date} />}
     </div>
   );
 }
 
-function MobilityCheckbox({ date }: { date: string }) {
-  const [done, setDone] = useState<boolean | undefined>(undefined); // undefined = loading
+// UX addition (post-M12): a manual 0-10 min entry, same stepper pattern as
+// Steps — replaces the old plain checkbox (owner: "I can add 0 to 10 mins,
+// manual entry is fine"). Capped at 10 since that's the stated routine
+// length; every adjust writes/upserts a row immediately, exactly like
+// StepsRow below (no separate "clear" — 0 min is itself a valid logged
+// value, not distinct from "not logged").
+const MOBILITY_MAX_MINUTES = 10;
+
+function MobilityRow({ date }: { date: string }) {
+  const [minutes, setMinutes] = useState<number | undefined>(undefined); // undefined = loading
 
   useEffect(() => {
     let cancelled = false;
     getMobilityLog(date).then((log) => {
-      if (!cancelled) setDone(!!log);
+      if (!cancelled) setMinutes(log?.duration_min ?? 0);
     });
     return () => {
       cancelled = true;
     };
   }, [date]);
 
-  async function toggle() {
-    if (done) {
-      await clearMobilityLog(date);
-      setDone(false);
-    } else {
-      await logMobility(date);
-      setDone(true);
-    }
+  async function adjust(delta: number) {
+    const next = Math.max(0, Math.min(MOBILITY_MAX_MINUTES, (minutes ?? 0) + delta));
+    setMinutes(next);
+    await logMobility(date, next);
   }
 
-  if (done === undefined) return null;
+  if (minutes === undefined) return null;
 
   return (
-    <Card>
-      <label className="flex items-center gap-2 text-sm text-ink">
-        <input type="checkbox" checked={done} onChange={toggle} className="h-5 w-5" />
-        Mobility (10 min)
-      </label>
+    <Card className="flex items-center justify-between">
+      <span className="text-sm text-ink">Mobility</span>
+      <div className="flex items-center gap-3">
+        <button type="button" aria-label="Decrease mobility minutes" onClick={() => adjust(-1)} className="h-8 w-8 rounded-full bg-surface-alt">
+          −
+        </button>
+        <span className="text-sm tabular-nums">{minutes} min</span>
+        <button type="button" aria-label="Increase mobility minutes" onClick={() => adjust(1)} className="h-8 w-8 rounded-full bg-surface-alt">
+          +
+        </button>
+      </div>
     </Card>
   );
 }
 
+// UX addition (post-M12): a manual grams entry, same stepper pattern as
+// Steps — replaces the old Yes/No buttons (owner: "similarly add another
+// manual entry for protein"). `hit` (grams >= 120) is still derived and
+// synced under the hood so Week Plan's grading is untouched — see
+// dailyLogs.ts#logProteinGrams. The evening-only gate (isAfter6pm) is kept
+// as-is; only named here in case that's not what's wanted, since it wasn't
+// part of this specific ask.
+const PROTEIN_INCREMENT_GRAMS = 10;
+
 function ProteinRow({ date }: { date: string }) {
-  const [hit, setHit] = useState<boolean | null | undefined>(undefined); // undefined = loading, null = unanswered
+  const [grams, setGrams] = useState<number | undefined>(undefined); // undefined = loading
 
   useEffect(() => {
     let cancelled = false;
     getProteinLog(date).then((log) => {
-      if (!cancelled) setHit(log ? log.hit : null);
+      if (!cancelled) setGrams(log?.grams ?? 0);
     });
     return () => {
       cancelled = true;
     };
   }, [date]);
 
-  async function choose(value: boolean) {
-    await logProtein(date, value);
-    setHit(value);
+  async function adjust(delta: number) {
+    const next = Math.max(0, (grams ?? 0) + delta);
+    setGrams(next);
+    await logProteinGrams(date, next);
   }
 
-  if (hit === undefined) return null;
+  if (grams === undefined) return null;
 
   return (
     <Card className="flex items-center justify-between">
-      <span className="text-sm text-ink">Protein — hit 120g?</span>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => choose(true)}
-          className={`rounded-lg px-4 py-2 text-sm ${hit === true ? 'bg-accent text-white' : 'bg-surface-alt text-ink'}`}
-        >
-          Yes
+      <span className="text-sm text-ink">Protein</span>
+      <div className="flex items-center gap-3">
+        <button type="button" aria-label="Decrease protein grams" onClick={() => adjust(-PROTEIN_INCREMENT_GRAMS)} className="h-8 w-8 rounded-full bg-surface-alt">
+          −
         </button>
-        <button
-          type="button"
-          onClick={() => choose(false)}
-          className={`rounded-lg px-4 py-2 text-sm ${hit === false ? 'bg-red-800 text-white' : 'bg-surface-alt text-ink'}`}
-        >
-          No
+        <span className="text-sm tabular-nums">{grams} g</span>
+        <button type="button" aria-label="Increase protein grams" onClick={() => adjust(PROTEIN_INCREMENT_GRAMS)} className="h-8 w-8 rounded-full bg-surface-alt">
+          +
         </button>
       </div>
     </Card>
