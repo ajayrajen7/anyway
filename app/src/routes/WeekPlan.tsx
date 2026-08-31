@@ -82,7 +82,10 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
           .filter(([sessionId]) => completedSessionIds.has(sessionId))
           .map(([, date]) => date),
       );
-      const proteinHitByDate = new Map(proteinLogsArr.map((p) => [p.date, p.hit]));
+      // Any logged gram value counts, not only once it reaches the 120g
+      // target — owner-confirmed change; see week.ts's comment on
+      // `proteinLogged` for the full reasoning.
+      const proteinLoggedDates = new Set(proteinLogsArr.map((p) => p.date));
       const stepsByDate = new Set(stepsLogsArr.map((s) => s.date));
       const cardioDates = new Set(cardioLogsArr.map((c) => c.date));
       const mobilityDates = new Set(mobilityLogsArr.map((m) => m.date));
@@ -99,7 +102,7 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
               : false;
         const completion = computeDayCompletion(date, kind, {
           mainActivityDone,
-          proteinHit: proteinHitByDate.get(date) === true,
+          proteinLogged: proteinLoggedDates.has(date),
           stepsLogged: stepsByDate.has(date),
         });
         // Only a lifting day has an exercise list to navigate to at all —

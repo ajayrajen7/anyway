@@ -318,7 +318,11 @@ describe('Today screen', () => {
     expect(screen.getByRole('checkbox', { name: /Full mobility/ })).toBeChecked();
   });
 
-  it('a "Done for today" button appears on a lifting day only once session, protein, and steps are all logged', async () => {
+  it('a "Done for today" button appears on a lifting day once session, protein, and steps are all logged — any protein value counts, not only 120g+', async () => {
+    // Owner-confirmed change: a day stayed stuck with no Done button even
+    // with 50g of protein logged, because the day-completion signal used to
+    // require hitting the 120g target. Now logging any value at all is
+    // enough — same as Steps, which has no target either.
     const user = userEvent.setup();
     getTodayMock.mockResolvedValue({
       ...liftingDay,
@@ -330,9 +334,7 @@ describe('Today screen', () => {
     expect(screen.queryByRole('button', { name: 'Done for today' })).not.toBeInTheDocument();
 
     const proteinIncrease = await screen.findByRole('button', { name: 'Increase protein grams' });
-    for (let i = 0; i < 12; i++) {
-      await user.click(proteinIncrease); // 12 × 10g = 120g, hits the target
-    }
+    await user.click(proteinIncrease); // just 10g — well under the 120g target
     await user.click(screen.getByRole('button', { name: 'Increase steps' }));
 
     const doneButton = await screen.findByRole('button', { name: 'Done for today' });
@@ -340,6 +342,7 @@ describe('Today screen', () => {
 
     expect(await screen.findByText('✓ Done for today')).toBeInTheDocument();
     expect(screen.queryByText('✓ Session complete')).not.toBeInTheDocument();
+    expect(await db.proteinLogs.get('2026-01-05')).toEqual({ date: '2026-01-05', grams: 10, hit: false });
   });
 
   it('Edit on a fully-done lifting day returns to the full layout, session card included', async () => {

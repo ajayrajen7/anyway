@@ -155,28 +155,28 @@ describe('buildPainStrip', () => {
 
 describe('computeDayCompletion', () => {
   it('a lifting day is green only when session, protein, and steps are all done', () => {
-    const green = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: true, proteinHit: true, stepsLogged: true });
+    const green = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: true, proteinLogged: true, stepsLogged: true });
     expect(green).toEqual({ date: '2026-01-05', kind: 'lifting', done: 3, total: 3, color: 'green' });
   });
 
   it('a lifting day with 1-2 of 3 is yellow', () => {
-    const yellow = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: true, proteinHit: false, stepsLogged: false });
+    const yellow = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: true, proteinLogged: false, stepsLogged: false });
     expect(yellow.color).toBe('yellow');
     expect(yellow.done).toBe(1);
   });
 
   it('a lifting day with nothing done is red', () => {
-    const red = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: false, proteinHit: false, stepsLogged: false });
+    const red = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: false, proteinLogged: false, stepsLogged: false });
     expect(red.color).toBe('red');
   });
 
   it('a cardio_mobility day grades the same 3-slot way (main activity = cardio+mobility combined)', () => {
-    const result = computeDayCompletion('2026-01-07', 'cardio_mobility', { mainActivityDone: true, proteinHit: true, stepsLogged: false });
+    const result = computeDayCompletion('2026-01-07', 'cardio_mobility', { mainActivityDone: true, proteinLogged: true, stepsLogged: false });
     expect(result).toEqual({ date: '2026-01-07', kind: 'cardio_mobility', done: 2, total: 3, color: 'yellow' });
   });
 
   it('a rest day has no main-activity slot — only 2 of 2 possible, green needs just protein+steps', () => {
-    const result = computeDayCompletion('2026-01-11', 'rest', { mainActivityDone: false, proteinHit: true, stepsLogged: true });
+    const result = computeDayCompletion('2026-01-11', 'rest', { mainActivityDone: false, proteinLogged: true, stepsLogged: true });
     expect(result).toEqual({ date: '2026-01-11', kind: 'rest', done: 2, total: 2, color: 'green' });
   });
 });

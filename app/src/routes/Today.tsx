@@ -126,7 +126,7 @@ function DayBody({
   slotCount: number;
 }) {
   const config = CARDIO_CONFIG[weekday];
-  const [signals, setSignals] = useState<{ mainActivityDone: boolean; proteinHit: boolean; stepsLogged: boolean } | undefined>(undefined);
+  const [signals, setSignals] = useState<{ mainActivityDone: boolean; proteinLogged: boolean; stepsLogged: boolean } | undefined>(undefined);
   // Whether the "Done for today" button has actually been tapped for this
   // date — a persisted fact of its own (src/lib/types.ts#DayConfirmation),
   // deliberately separate from `signals`/`dayDone` below. All 3 fields being
@@ -154,7 +154,10 @@ function DayBody({
     ]).then(([protein, steps, cardio, mobility, confirmation]) => {
       const mainActivityDone =
         kind === 'lifting' ? session?.status === 'completed' : kind === 'cardio_mobility' ? (!config || !!cardio) && !!mobility : false;
-      setSignals({ mainActivityDone, proteinHit: protein?.hit === true, stepsLogged: !!steps });
+      // Any logged gram value counts, not only once it reaches the 120g
+      // target — owner-confirmed change; see week.ts's comment on
+      // `proteinLogged` for the full reasoning.
+      setSignals({ mainActivityDone, proteinLogged: !!protein, stepsLogged: !!steps });
       setConfirmed(!!confirmation);
     });
   }, [date, kind, config, session]);

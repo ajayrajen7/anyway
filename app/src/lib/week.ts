@@ -135,6 +135,14 @@ export function round1(n: number): number {
 // protein, and steps; a rest day has no main-activity item at all (2 of 2).
 // Pure — the caller (WeekPlan.tsx) resolves each boolean from Dexie first,
 // keeping the grading rule itself trivially testable.
+//
+// `proteinLogged` counts as done the moment any gram value is recorded for
+// the date — not whether it reached the 120g target. Originally this was
+// `proteinHit` (target-gated), but the owner explicitly asked for "any
+// value counts" after finding a day stayed ungraded with 50g logged; see
+// memory.md's whole-day-Done, round 3 entry. `grams >= 120` is still
+// derived and stored on the log row itself (`ProteinLog.hit`) — it's just
+// no longer what gates day completion anywhere.
 export type DayKind = 'lifting' | 'cardio_mobility' | 'rest';
 export type DayColor = 'green' | 'yellow' | 'red';
 
@@ -149,9 +157,9 @@ export interface DayCompletion {
 export function computeDayCompletion(
   date: string,
   kind: DayKind,
-  signals: { mainActivityDone: boolean; proteinHit: boolean; stepsLogged: boolean },
+  signals: { mainActivityDone: boolean; proteinLogged: boolean; stepsLogged: boolean },
 ): DayCompletion {
-  const items = kind === 'rest' ? [signals.proteinHit, signals.stepsLogged] : [signals.mainActivityDone, signals.proteinHit, signals.stepsLogged];
+  const items = kind === 'rest' ? [signals.proteinLogged, signals.stepsLogged] : [signals.mainActivityDone, signals.proteinLogged, signals.stepsLogged];
   const total = items.length;
   const done = items.filter(Boolean).length;
   const color: DayColor = done >= total ? 'green' : done > 0 ? 'yellow' : 'red';

@@ -80,6 +80,37 @@ describe('Week Plan screen', () => {
     expect(screen.getByText('3 of 3')).toBeInTheDocument();
   });
 
+  it('grades protein as done from any logged gram value, even well under the 120g target', async () => {
+    // Owner-confirmed change: a day with 50g logged still counts — the
+    // 120g figure is a derived fact on the log row (`hit: false` here), not
+    // a gate on day completion anywhere. See week.ts's `proteinLogged` note.
+    const monday = weekBoundsFor(localDateKey()).start;
+    const programme: ProgrammeResponse = {
+      phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
+      day_templates: [{ id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] }],
+    };
+    await db.programmeCache.put({ id: 1, cachedAt: new Date().toISOString(), data: programme });
+    await db.todayCache.put({
+      sessionId: 42,
+      date: monday,
+      cachedAt: new Date().toISOString(),
+      data: {
+        date: monday, weekday: 1,
+        day_template: { id: 1, name: 'Lower A', kind: 'lifting' },
+        session: { id: 42, status: 'completed', started_at: null, ended_at: null, note: null },
+        slots: [],
+      },
+    });
+    await db.outbox.put({ entity: 'session_complete', entity_id: '42', payload: '{}', created_at: new Date().toISOString(), synced_at: null });
+    await db.proteinLogs.put({ date: monday, grams: 50, hit: false });
+    await db.stepsLogs.put({ date: monday, steps: 9000 });
+
+    renderWeekPlan();
+
+    await screen.findByText('Monday');
+    expect(screen.getByText('3 of 3')).toBeInTheDocument();
+  });
+
   it('links a lifting day to its session once opened as Today, and every other day to a read-only preview', async () => {
     const monday = weekBoundsFor(localDateKey()).start;
     const mondayDate = parseDateKey(monday);
