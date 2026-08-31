@@ -8,7 +8,7 @@
 // doesn't think in phase-day labels day to day, they think in weekdays.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, primaryButtonClass } from '../components/ui';
+import { Card, Pill, primaryButtonClass } from '../components/ui';
 import { ApiError, getToday } from '../lib/api';
 import {
   clearCardioLog,
@@ -139,10 +139,19 @@ function TodayCard({ data }: { data: TodayResponse }) {
         <p className="mt-2 text-sm text-ink-muted">
           {slots.length} exercises{minutes ? ` · ~${minutes} min` : ''}
         </p>
-        {session && (
-          <Link to={`/session/${session.id}`} className={`mt-4 w-full ${primaryButtonClass}`}>
-            Start session
-          </Link>
+        {session?.status === 'completed' ? (
+          <div className="mt-4 flex items-center justify-between">
+            <Pill tone="accent">✓ Session complete</Pill>
+            <Link to={`/session/${session.id}`} className="text-sm text-accent underline">
+              View session
+            </Link>
+          </div>
+        ) : (
+          session && (
+            <Link to={`/session/${session.id}`} className={`mt-4 w-full ${primaryButtonClass}`}>
+              Start session
+            </Link>
+          )
         )}
       </Card>
       <MobilityRow date={date} />

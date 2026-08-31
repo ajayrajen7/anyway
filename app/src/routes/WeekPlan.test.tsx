@@ -80,6 +80,39 @@ describe('Week Plan screen', () => {
     expect(screen.getByText('3 of 3')).toBeInTheDocument();
   });
 
+  it('links a lifting day to its exercise list once that day has been opened as Today, and leaves other days as plain rows', async () => {
+    const monday = weekBoundsFor(localDateKey()).start;
+    const programme: ProgrammeResponse = {
+      phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
+      day_templates: [
+        { id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] },
+        { id: 2, weekday: 3, name: 'Mobility + Zone 2', kind: 'cardio_mobility', slots: [] },
+      ],
+    };
+    await db.programmeCache.put({ id: 1, cachedAt: new Date().toISOString(), data: programme });
+    await db.todayCache.put({
+      sessionId: 42,
+      date: monday,
+      cachedAt: new Date().toISOString(),
+      data: {
+        date: monday, weekday: 1,
+        day_template: { id: 1, name: 'Lower A', kind: 'lifting' },
+        session: { id: 42, status: 'planned', started_at: null, ended_at: null, note: null },
+        slots: [],
+      },
+    });
+
+    renderWeekPlan();
+
+    const mondayLink = await screen.findByRole('link', { name: /Monday/ });
+    expect(mondayLink).toHaveAttribute('href', '/session/42');
+    // Wednesday is cardio_mobility (no exercise-list screen at all) and
+    // Tuesday is a lifting day that hasn't been opened yet (no session
+    // cached) — neither should be a link.
+    expect(screen.getByText('Tuesday').closest('a')).toBeNull();
+    expect(screen.getByText('Wednesday').closest('a')).toBeNull();
+  });
+
   it('navigates to the previous week and back', async () => {
     const user = userEvent.setup();
     const programme: ProgrammeResponse = { phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 }, day_templates: [] };

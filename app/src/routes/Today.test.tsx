@@ -64,6 +64,19 @@ describe('Today screen', () => {
     expect(link).toHaveAttribute('href', '/session/42');
   });
 
+  it('shows "Session complete" instead of "Start session" once the session is done', async () => {
+    getTodayMock.mockResolvedValue({
+      ...liftingDay,
+      session: { ...liftingDay.session!, status: 'completed' },
+    });
+    renderToday();
+
+    await screen.findByText('✓ Session complete');
+    expect(screen.queryByRole('link', { name: 'Start session' })).not.toBeInTheDocument();
+    const viewLink = screen.getByRole('link', { name: 'View session' });
+    expect(viewLink).toHaveAttribute('href', '/session/42');
+  });
+
   it('renders the cardio/mobility day, headed by the weekday name, without a Start session link', async () => {
     getTodayMock.mockResolvedValue({
       date: '2026-01-07',

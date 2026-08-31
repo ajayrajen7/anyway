@@ -25,7 +25,11 @@ import {
 
 const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-type State = { status: 'loading' } | { status: 'no-programme' } | { status: 'ready'; days: DayCompletion[] };
+interface DayRow extends DayCompletion {
+  sessionId: number | null; // set only for a lifting day whose session is already cached locally — see the render below for why most days won't have one
+}
+
+type State = { status: 'loading' } | { status: 'no-programme' } | { status: 'ready'; days: DayRow[] };
 
 // green/red map onto the shared StatusDot tones (accent = done, none =
 // nothing logged); yellow (partial) keeps its own amber — a three-state
@@ -66,6 +70,12 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
         db.outbox.where('entity').equals('session_complete').toArray(),
       ]);
       const dateBySessionId = sessionDateById; // session_id -> date
+      // The reverse lookup — only ever populated for dates that have
+      // actually been opened as "Today" at some point (todayCache is
+      // written by Today.tsx, once per date it's loaded for; a day this
+      // week that hasn't been reached yet simply has no session_id to link
+      // to, offline or not — see the render below for how that's handled).
+      const sessionIdByDate = new Map(Array.from(dateBySessionId.entries()).map(([sessionId, date]) => [date, sessionId]));
       const completedSessionIds = new Set(outboxArr.map((o) => Number(o.entity_id)));
       const completedDates = new Set(
         Array.from(dateBySessionId.entries())
@@ -77,7 +87,7 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
       const cardioDates = new Set(cardioLogsArr.map((c) => c.date));
       const mobilityDates = new Set(mobilityLogsArr.map((m) => m.date));
 
-      const days = datesMonToSat(bounds).map((date, i) => {
+      const days: DayRow[] = datesMonToSat(bounds).map((date, i) => {
         const weekday = i + 1; // 1=Mon..6=Sat
         const template = programme.data.day_templates.find((t) => t.weekday === weekday);
         const kind = template?.kind ?? 'rest';
@@ -87,11 +97,15 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
             : kind === 'cardio_mobility'
               ? cardioDates.has(date) && mobilityDates.has(date)
               : false;
-        return computeDayCompletion(date, kind, {
+        const completion = computeDayCompletion(date, kind, {
           mainActivityDone,
           proteinHit: proteinHitByDate.get(date) === true,
           stepsLogged: stepsByDate.has(date),
         });
+        // Only a lifting day has an exercise list to navigate to at all —
+        // cardio/mobility and rest days are handled entirely inline on
+        // Today.tsx, with no separate /session/:id screen for them.
+        return { ...completion, sessionId: kind === 'lifting' ? (sessionIdByDate.get(date) ?? null) : null };
       });
 
       if (!cancelled) setState({ status: 'ready', days });
@@ -137,9 +151,9 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
       </div>
 
       <ul className="mt-4 flex flex-col gap-2">
-        {state.days.map((day, i) => (
-          <li key={day.date}>
-            <Card className="flex items-center justify-between">
+        {state.days.map((day, i) => {
+          const rowContent = (
+            <>
               <span className="flex items-center gap-3 text-ink">
                 {DOT_CLASS[day.color] ? (
                   <span className={`inline-block h-3 w-3 rounded-full ${DOT_CLASS[day.color]}`} aria-hidden="true" />
@@ -151,10 +165,26 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
               <span className="text-xs tabular-nums text-ink-muted">
                 {day.done} of {day.total}
               </span>
-            </Card>
-          </li>
-        ))}
+            </>
+          );
+          return (
+            <li key={day.date}>
+              {day.sessionId != null ? (
+                <Link to={`/session/${day.sessionId}`}>
+                  <Card className="flex items-center justify-between">{rowContent}</Card>
+                </Link>
+              ) : (
+                <Card className="flex items-center justify-between">{rowContent}</Card>
+              )}
+            </li>
+          );
+        })}
       </ul>
+      {/* Only a day that's already been opened as "Today" (this one, or an
+          earlier lifting day this week) has an exercise list to jump to —
+          a day not yet reached has no session created for it yet, so it
+          isn't a link. Cardio/mobility and rest days never link at all;
+          they live entirely on Today.tsx, not a separate screen. */}
 
       <Link to="/coverage" className="mt-4 block text-sm text-accent underline">
         View coverage →
