@@ -105,6 +105,19 @@ export const StepsLog = z.object({
 });
 export type StepsLog = z.infer<typeof StepsLog>;
 
+// Whole-day "Done for today" (post-M12 follow-up, round 2): the owner asked
+// for an explicit "Done" button they tap, not a silent auto-collapse the
+// instant the last field is filled — so this one bit of state (was the
+// button actually pressed for this date?) needs its own persisted row, the
+// same lesson learned from the earlier ephemeral-`closed`-flag bug ("how do
+// I save a day, that button is missing" — see memory.md). Local-only, never
+// synced: purely a UI confirmation, not domain data anything server-side or
+// any other screen needs to know about.
+export const DayConfirmation = z.object({
+  date: z.string(),
+});
+export type DayConfirmation = z.infer<typeof DayConfirmation>;
+
 // --- GET /api/today (docs/architecture.md §B5, M3) ---
 
 export const ExerciseRef = z.object({

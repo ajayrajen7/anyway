@@ -6,6 +6,7 @@ import type {
   CachedProgramme,
   CachedToday,
   CardioLog,
+  DayConfirmation,
   Exercise,
   LoggedSet,
   MobilityLog,
@@ -28,6 +29,7 @@ export class AppDatabase extends Dexie {
   cardioLogs!: Table<CardioLog, number>;
   programmeCache!: Table<CachedProgramme, number>;
   stepsLogs!: Table<StepsLog, string>;
+  dayConfirmations!: Table<DayConfirmation, string>;
 
   constructor() {
     super('anyway');
@@ -81,6 +83,11 @@ export class AppDatabase extends Dexie {
     this.version(7).stores({
       weighIns: null,
       stepsLogs: 'date',
+    });
+    // Whole-day "Done for today", round 2: an explicit tap, not an auto-
+    // collapse — see src/lib/types.ts#DayConfirmation for the full reasoning.
+    this.version(8).stores({
+      dayConfirmations: 'date',
     });
   }
 }

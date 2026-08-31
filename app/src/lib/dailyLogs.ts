@@ -88,3 +88,18 @@ export async function logSteps(date: string, steps: number): Promise<void> {
     await appendOutbox('steps_log', date, { date, steps });
   });
 }
+
+// --- Whole-day "Done for today" confirmation (Today.tsx) — local-only, no
+// outbox entry: purely a record that the button was tapped for this date,
+// not domain data any other screen or the server needs. See
+// src/lib/types.ts#DayConfirmation for why this needs its own persisted row
+// rather than a Today.tsx-local flag (the earlier "how do I save a day" bug
+// traced to exactly that mistake).
+
+export async function getDayConfirmation(date: string) {
+  return db.dayConfirmations.get(date);
+}
+
+export async function confirmDayDone(date: string): Promise<void> {
+  await db.dayConfirmations.put({ date });
+}

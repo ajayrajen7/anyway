@@ -8,21 +8,29 @@
 // doesn't think in phase-day labels day to day, they think in weekdays.
 //
 // Whole-day "Done for today" (post-M12 follow-up): once every part of the
-// day is filled in, the screen collapses to one confirmation instead of
-// staying fully expanded forever — reusing Week Plan's own definition of
-// "done" (src/lib/week.ts#computeDayCompletion) rather than inventing a
-// second one, so the two screens never disagree about what counts. See
-// memory.md's "how do I save a day" / whole-day-Done entries for the full
-// history — a previous cardio/mobility-only version of this collapse used
-// its own local, unpersisted flag and was extended+unified here.
+// day is filled in, an explicit "Done for today" button appears; tapping it
+// collapses the screen to one confirmation instead of staying fully
+// expanded forever. The "which fields count" question reuses Week Plan's
+// own definition of "done" (src/lib/week.ts#computeDayCompletion) rather
+// than inventing a second one, so the two screens never disagree about what
+// counts. See memory.md's "how do I save a day" / whole-day-Done entries
+// for the full history: an earlier cardio/mobility-only version used its
+// own local, unpersisted "closed" flag (lost on reload); the version after
+// that auto-collapsed the instant every field was filled in, with no tap at
+// all; the owner asked specifically for a button back — "I want a done
+// button that appears after all 3 fields for a day are filled" — so the tap
+// itself is now the thing that's persisted (src/lib/types.ts#DayConfirmation),
+// not just the underlying field data.
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, Pill, primaryButtonClass } from '../components/ui';
+import { Card, Pill, PrimaryButton, primaryButtonClass } from '../components/ui';
 import { ApiError, getToday } from '../lib/api';
 import {
   clearCardioLog,
   clearMobilityLog,
+  confirmDayDone,
   getCardioLog,
+  getDayConfirmation,
   getMobilityLog,
   getProteinLog,
   getStepsLog,
@@ -119,26 +127,35 @@ function DayBody({
 }) {
   const config = CARDIO_CONFIG[weekday];
   const [signals, setSignals] = useState<{ mainActivityDone: boolean; proteinHit: boolean; stepsLogged: boolean } | undefined>(undefined);
+  // Whether the "Done for today" button has actually been tapped for this
+  // date — a persisted fact of its own (src/lib/types.ts#DayConfirmation),
+  // deliberately separate from `signals`/`dayDone` below. All 3 fields being
+  // filled in makes the button *appear*; it doesn't collapse the screen by
+  // itself, on purpose — the owner asked for the explicit tap back after an
+  // earlier version auto-collapsed with no button at all.
+  const [confirmed, setConfirmed] = useState(false);
   // Lets you get back to the full, editable layout after it's collapsed —
   // e.g. to adjust a number you mis-tapped. Resets to false on remount (a
   // fresh visit to Today always leads with the collapsed confirmation if
-  // the day is already done, which is the whole point of this).
+  // the day is already confirmed, which is the whole point of this).
   const [forceExpanded, setForceExpanded] = useState(false);
 
-  // Re-derives "done" from whatever's actually saved in Dexie right now —
-  // never a flag of its own to fall out of sync. Passed to every row below
-  // as onChange, so checking the last box collapses the screen immediately,
-  // not just on the next reload.
+  // Re-derives both "done" and "confirmed" from whatever's actually saved in
+  // Dexie right now — never a flag of its own to fall out of sync. Passed to
+  // every row below as onChange, so checking the last box makes the Done
+  // button appear immediately, not just on the next reload.
   const refresh = useCallback(() => {
     Promise.all([
       getProteinLog(date),
       getStepsLog(date),
       kind === 'cardio_mobility' && config ? getCardioLog(date, config.modality) : Promise.resolve(undefined),
       kind === 'cardio_mobility' ? getMobilityLog(date) : Promise.resolve(undefined),
-    ]).then(([protein, steps, cardio, mobility]) => {
+      getDayConfirmation(date),
+    ]).then(([protein, steps, cardio, mobility, confirmation]) => {
       const mainActivityDone =
         kind === 'lifting' ? session?.status === 'completed' : kind === 'cardio_mobility' ? (!config || !!cardio) && !!mobility : false;
       setSignals({ mainActivityDone, proteinHit: protein?.hit === true, stepsLogged: !!steps });
+      setConfirmed(!!confirmation);
     });
   }, [date, kind, config, session]);
 
@@ -153,7 +170,13 @@ function DayBody({
   const completion = computeDayCompletion(date, kind, signals);
   const dayDone = completion.done >= completion.total;
 
-  if (dayDone && !forceExpanded) {
+  async function handleConfirm() {
+    await confirmDayDone(date);
+    setConfirmed(true);
+    setForceExpanded(false); // collapse immediately on tap, not just next mount
+  }
+
+  if (dayDone && confirmed && !forceExpanded) {
     return (
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-semibold">{weekdayName}</h1>
@@ -167,6 +190,16 @@ function DayBody({
     );
   }
 
+  // Shown at the bottom of the expanded layout once every field for the day
+  // is filled in — whether that's the first time (not yet confirmed) or
+  // after tapping Edit to review a day already confirmed (re-tapping just
+  // re-collapses, same handler).
+  const doneButton = dayDone && (
+    <PrimaryButton onClick={handleConfirm} className="w-full">
+      Done for today
+    </PrimaryButton>
+  );
+
   if (kind === 'rest') {
     return (
       <div className="flex flex-col gap-3">
@@ -174,6 +207,7 @@ function DayBody({
         <p className="text-sm text-ink-muted">Flat walk only. Not training — just movement.</p>
         <StepsRow date={date} onChange={refresh} />
         <ProteinRow date={date} onChange={refresh} />
+        {doneButton}
       </div>
     );
   }
@@ -185,6 +219,7 @@ function DayBody({
         <CardioMobilityRows date={date} weekday={weekday} onChange={refresh} />
         <StepsRow date={date} onChange={refresh} />
         <ProteinRow date={date} onChange={refresh} />
+        {doneButton}
       </div>
     );
   }
@@ -217,6 +252,7 @@ function DayBody({
       <MobilityRow date={date} />
       <StepsRow date={date} onChange={refresh} />
       <ProteinRow date={date} onChange={refresh} />
+      {doneButton}
     </div>
   );
 }

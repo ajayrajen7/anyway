@@ -3,7 +3,9 @@ import { db } from './db';
 import {
   clearCardioLog,
   clearMobilityLog,
+  confirmDayDone,
   getCardioLog,
+  getDayConfirmation,
   getMobilityLog,
   getProteinLog,
   getStepsLog,
@@ -18,6 +20,7 @@ afterEach(async () => {
   await db.mobilityLogs.clear();
   await db.cardioLogs.clear();
   await db.stepsLogs.clear();
+  await db.dayConfirmations.clear();
   await db.outbox.clear();
 });
 
@@ -134,5 +137,35 @@ describe('steps', () => {
 
   it('is undefined for an unlogged date', async () => {
     expect(await getStepsLog('2026-01-06')).toBeUndefined();
+  });
+});
+
+// Whole-day "Done for today" confirmation (Today.tsx) — a persisted record
+// of the button tap itself, separate from any of the fields above. No
+// outbox entry: this is local UI state, never synced.
+describe('day confirmation', () => {
+  it('is undefined until confirmed', async () => {
+    expect(await getDayConfirmation('2026-01-05')).toBeUndefined();
+  });
+
+  it('records the date once confirmed', async () => {
+    await confirmDayDone('2026-01-05');
+    expect(await getDayConfirmation('2026-01-05')).toEqual({ date: '2026-01-05' });
+  });
+
+  it('queues no outbox entry — purely local', async () => {
+    await confirmDayDone('2026-01-05');
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('confirming twice for the same date is idempotent', async () => {
+    await confirmDayDone('2026-01-05');
+    await confirmDayDone('2026-01-05');
+    expect(await db.dayConfirmations.count()).toBe(1);
+  });
+
+  it('does not conflate two different dates', async () => {
+    await confirmDayDone('2026-01-05');
+    expect(await getDayConfirmation('2026-01-06')).toBeUndefined();
   });
 });
