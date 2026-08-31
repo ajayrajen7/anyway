@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Card, primaryButtonClass } from '../components/ui';
-import { completeSession, loggedSetsForSession } from '../lib/outbox';
+import { completeSession, hydrateSessionFromServer, loggedSetsForSession } from '../lib/outbox';
 import { computeSessionTotals, type SessionTotals } from '../lib/session';
 
 export default function SessionSummary() {
@@ -17,6 +17,24 @@ export default function SessionSummary() {
     let cancelled = false;
     Promise.all([loggedSetsForSession(sessionId), completeSession(sessionId)]).then(([sets]) => {
       if (!cancelled) setTotals(computeSessionTotals(sets));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  // Best-effort, non-blocking repair for a session whose local detail has
+  // gone missing — see hydrateSessionFromServer's own doc comment
+  // (memory.md's "session data lost" entry). The summary above has already
+  // rendered from Dexie by the time this resolves; a genuine "0 sets done"
+  // becomes the real total once this finds something to add.
+  useEffect(() => {
+    let cancelled = false;
+    hydrateSessionFromServer(sessionId).then((added) => {
+      if (cancelled || added === 0) return;
+      loggedSetsForSession(sessionId).then((sets) => {
+        if (!cancelled) setTotals(computeSessionTotals(sets));
+      });
     });
     return () => {
       cancelled = true;

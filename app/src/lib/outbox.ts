@@ -1,7 +1,13 @@
 // Dexie writes for the session runner (M4). Every mutation goes to
 // `loggedSets` (the local source of truth) *and* appends an `outbox` entry
 // in the same breath — the background sync worker (M9) drains the outbox to
-// the server later. Nothing here ever awaits the network (§B2).
+// the server later. Every *write* path here stays offline-first exactly as
+// §B2 requires — nothing on the live set-logging path ever awaits the
+// network. `hydrateSessionFromServer` at the bottom is the one deliberate
+// exception, and it's a read, not a write: a best-effort background repair
+// for a session whose local detail has gone missing, same narrow-exception
+// shape as AddExercise.tsx's real-time LLM call. See its own doc comment.
+import { getSessionSets } from './api';
 import { db } from './db';
 import type { LoggedSet, Provenance } from './types';
 
@@ -96,4 +102,44 @@ export async function completeSession(sessionId: number): Promise<void> {
   const existing = await db.outbox.where({ entity: 'session_complete', entity_id: entityId }).first();
   if (existing) return;
   await appendOutbox('session_complete', entityId, { session_id: sessionId, ended_at: new Date().toISOString() });
+}
+
+// Recovers a session's set-by-set detail from the server when the local
+// copy has gone missing — see memory.md's "session data lost" entry. Root
+// cause there was an iOS "Add to Home Screen" install using a separate
+// storage container from the Safari tab the workout was originally logged
+// in, but the same repair applies to any cause of local data loss (cleared
+// site data, a reinstalled PWA, storage eviction).
+//
+// Deliberately a *merge*, not a replace: only server rows whose
+// `client_uuid` isn't already present locally get added, so this is safe to
+// call every time a session screen mounts — a session with nothing missing
+// costs one network round trip and inserts nothing. Best-effort by design:
+// swallows any failure (offline, server error) and simply leaves the local
+// copy as it was, the same "try, don't block" treatment as
+// cacheExerciseLibrary/cacheProgramme on Today.tsx. Returns how many rows
+// were actually added, so a caller can decide whether to re-read from
+// Dexie.
+export async function hydrateSessionFromServer(sessionId: number): Promise<number> {
+  let serverSets: LoggedSet[];
+  try {
+    serverSets = await getSessionSets(sessionId);
+  } catch (err: unknown) {
+    console.error('failed to hydrate session from server', err);
+    return 0;
+  }
+  if (serverSets.length === 0) return 0;
+
+  const existingUuids = new Set((await db.loggedSets.where('session_id').equals(sessionId).toArray()).map((s) => s.client_uuid));
+  // Strip the server's own row `id` — local rows get their id from Dexie's
+  // own `++id` autoincrement (see types.ts#LoggedSet: "absent for a
+  // not-yet-synced local row"); reusing the server's id risks colliding
+  // with a locally-assigned one.
+  const missing = serverSets.filter((s) => !existingUuids.has(s.client_uuid)).map(({ id: _id, ...rest }) => rest);
+  if (missing.length === 0) return 0;
+
+  // No outbox entries for these — they came *from* the server, so they're
+  // already exactly as synced as they'll ever be.
+  await db.loggedSets.bulkAdd(missing);
+  return missing.length;
 }

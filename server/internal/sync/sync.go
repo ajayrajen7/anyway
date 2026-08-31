@@ -59,6 +59,61 @@ func LogSet(ctx context.Context, conn execer, p SetPayload) error {
 	return err
 }
 
+// queryer is the read counterpart of execer — satisfied by *sql.DB too.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// SetRecord is SetPayload plus the server's own row id — the shape returned
+// by GET /api/sessions/:id/sets (see ListSetsForSession), read back down to
+// a client whose local copy of a session's detail has gone missing. This is
+// the one read path back out of logged_sets for a client — everywhere else
+// this package only ever receives writes (see the package doc above).
+type SetRecord struct {
+	ID int64 `json:"id"`
+	SetPayload
+}
+
+// ListSetsForSession answers GET /api/sessions/:id/sets — a deliberate,
+// narrow exception to this server's write-only relationship with
+// logged_sets (see the package doc). It exists for exactly one purpose:
+// letting a client whose local IndexedDB has lost (or never had, in a
+// separate browser storage container — see memory.md's "session data lost"
+// entry) a session's set-by-set detail reconstruct it from the server's own
+// copy, rather than that detail being permanently gone. Every set this
+// server has ever received for the session comes back, oldest first —
+// exactly the write order logged_sets itself preserves via its own
+// autoincrement id, which is also `logged_at` order in practice.
+//
+// `client_uuid` is COALESCEd to a synthetic value for the small number of
+// pre-M9 rows that predate that column (migration 0003 added it as a bare
+// nullable ALTER TABLE, before the M9 sync worker existed to always supply
+// one) — the client's own LoggedSet schema requires a non-empty string.
+func ListSetsForSession(ctx context.Context, conn queryer, sessionID int64) ([]SetRecord, error) {
+	rows, err := conn.QueryContext(ctx, `
+		SELECT id, COALESCE(client_uuid, 'srv-' || id), session_id, slot_id, exercise_id, set_index,
+		       load_kg, reps, status, provenance, added_by, logged_at
+		FROM logged_sets
+		WHERE session_id = ?
+		ORDER BY id ASC
+	`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []SetRecord{}
+	for rows.Next() {
+		var s SetRecord
+		if err := rows.Scan(&s.ID, &s.ClientUUID, &s.SessionID, &s.SlotID, &s.ExerciseID, &s.SetIndex,
+			&s.LoadKg, &s.Reps, &s.Status, &s.Provenance, &s.AddedBy, &s.LoggedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // --- session_complete ---
 
 type CompletePayload struct {

@@ -3,12 +3,12 @@
 // from any exercise, swap or delete any exercise, right from this list.
 // Nested Add sheet (see App.tsx) keeps this screen mounted while it's open,
 // same reasoning as the old SessionRunner's nested sheets (M5).
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { primaryButtonClass, secondaryButtonClass } from '../components/ui';
 import { getCachedToday } from '../lib/todayCache';
 import { getOverlay, removeExercise } from '../lib/overlay';
-import { loggedSetsForSession } from '../lib/outbox';
+import { hydrateSessionFromServer, loggedSetsForSession } from '../lib/outbox';
 import { buildRunnerSlots, computeSlotStatus, type RunnerOutletContext, type RunnerSlot, type SlotStatus } from '../lib/session';
 import type { CachedToday, LoggedSet, SessionOverlay } from '../lib/types';
 
@@ -31,11 +31,22 @@ export default function SessionOverview() {
     };
   }, [sessionId]);
 
-  function refresh() {
+  const refresh = useCallback(() => {
     getOverlay(sessionId).then(setOverlay);
     loggedSetsForSession(sessionId).then(setLoggedSets);
-  }
-  useEffect(refresh, [sessionId]);
+  }, [sessionId]);
+  useEffect(refresh, [refresh]);
+
+  // Best-effort, non-blocking repair — see hydrateSessionFromServer's own
+  // doc comment (memory.md's "session data lost" entry). The screen has
+  // already rendered from Dexie above by the time this resolves; if it
+  // finds anything missing, `refresh()` picks it up into the same render
+  // path a live-logged set would use.
+  useEffect(() => {
+    hydrateSessionFromServer(sessionId).then((added) => {
+      if (added > 0) refresh();
+    });
+  }, [sessionId, refresh]);
 
   if (cached === undefined || overlay === undefined) {
     return (

@@ -1,6 +1,7 @@
 // Thin fetch wrapper for the Go API (docs/architecture.md §B5). Auth is a
 // single static bearer token (B1) — no session/cookie plumbing, one user.
-import { Exercise, ProgrammeResponse, SyncResult, TodayResponse } from './types';
+import { z } from 'zod';
+import { Exercise, LoggedSet, ProgrammeResponse, SyncResult, TodayResponse } from './types';
 import { getApiToken } from './runtimeConfig';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
@@ -83,4 +84,17 @@ export async function generateExercise(name: string, notes?: string): Promise<Ex
     body: JSON.stringify({ name, notes: notes ?? '' }),
   });
   return Exercise.parse(raw);
+}
+
+// GET /api/sessions/:id/sets — the one read path back out of a session's
+// set-by-set detail (memory.md's "session data lost" entry). A second
+// deliberate exception to the offline-first rule, same shape as
+// generateExercise above: called only as a best-effort background merge
+// (src/lib/outbox.ts#hydrateSessionFromServer) when a session screen's
+// local Dexie copy looks incomplete, never on the live set-logging path.
+const SessionSetsResponse = z.object({ sets: LoggedSet.array() });
+
+export async function getSessionSets(sessionId: number): Promise<LoggedSet[]> {
+  const raw = await apiFetch<unknown>(`/api/sessions/${sessionId}/sets`);
+  return SessionSetsResponse.parse(raw).sets;
 }

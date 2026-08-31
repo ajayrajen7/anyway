@@ -1,10 +1,21 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../lib/db';
-import type { CachedToday, TodaySlot } from '../lib/types';
+import type { CachedToday, LoggedSet, TodaySlot } from '../lib/types';
 import SessionOverview from './SessionOverview';
+
+// getSessionSets is the one network call this screen makes (a best-effort
+// background recovery merge — see outbox.ts#hydrateSessionFromServer) —
+// mocked the same way generateExercise is in SessionFlows.test.tsx.
+// Defaults to "nothing to recover" so every other test here, which never
+// sets an expectation on it, behaves exactly as if it were offline.
+const { getSessionSetsMock } = vi.hoisted(() => ({ getSessionSetsMock: vi.fn() }));
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return { ...actual, getSessionSets: getSessionSetsMock };
+});
 
 function makeSlot(overrides: Partial<TodaySlot> = {}): TodaySlot {
   return {
@@ -43,6 +54,11 @@ function renderOverview(sessionId = 42) {
     </MemoryRouter>,
   );
 }
+
+beforeEach(() => {
+  getSessionSetsMock.mockReset();
+  getSessionSetsMock.mockResolvedValue([]); // "nothing to recover" default — every test below that cares overrides it
+});
 
 afterEach(async () => {
   await db.todayCache.clear();
@@ -116,5 +132,55 @@ describe('SessionOverview', () => {
 
     const swapButton = await screen.findByRole('button', { name: 'Swap Exercise A' });
     expect(swapButton).toBeInTheDocument();
+  });
+
+  // Real bug fixed here: local IndexedDB can end up with none of a
+  // session's logged sets — an iOS "Add to Home Screen" install uses a
+  // separate storage container from the Safari tab a workout was logged
+  // in, cleared site data, a reinstalled PWA. Reported live as "all the
+  // session data is lost." See memory.md's "session data lost" entry and
+  // outbox.ts#hydrateSessionFromServer.
+  it('recovers a session\'s logged sets from the server when the local copy has none, and marks the exercise done', async () => {
+    await seedCache([makeSlot({ id: 100, exercise: { id: 10, slug: 'a', name: 'Exercise A', unilateral: false, increment_kg: 2.5 }, sets: 2 })]);
+    const recovered: LoggedSet = {
+      id: 501, client_uuid: 'server-uuid-1', session_id: 42, slot_id: 100, exercise_id: 10,
+      set_index: 1, load_kg: 20, reps: 12, status: 'done', provenance: 'prescribed', added_by: null,
+      logged_at: '2026-01-05T10:00:00Z',
+    };
+    getSessionSetsMock.mockResolvedValue([recovered]);
+
+    renderOverview();
+    await screen.findByText('Exercise A');
+
+    await waitFor(async () => expect(await db.loggedSets.where('session_id').equals(42).count()).toBe(1));
+    expect(await screen.findByText('in progress')).toBeInTheDocument(); // 1 of 2 sets now accounted for
+  });
+
+  it('does not duplicate a set the local copy already has, matching by client_uuid', async () => {
+    await seedCache([makeSlot({ id: 100, exercise: { id: 10, slug: 'a', name: 'Exercise A', unilateral: false, increment_kg: 2.5 } })]);
+    await db.loggedSets.add({
+      client_uuid: 'already-local', session_id: 42, slot_id: 100, exercise_id: 10,
+      set_index: 1, load_kg: 20, reps: 12, status: 'done', provenance: 'prescribed', added_by: null,
+      logged_at: '2026-01-05T10:00:00Z',
+    });
+    getSessionSetsMock.mockResolvedValue([
+      { id: 501, client_uuid: 'already-local', session_id: 42, slot_id: 100, exercise_id: 10, set_index: 1, load_kg: 20, reps: 12, status: 'done', provenance: 'prescribed', added_by: null, logged_at: '2026-01-05T10:00:00Z' },
+    ]);
+
+    renderOverview();
+    await screen.findByText('Exercise A');
+    await waitFor(() => expect(getSessionSetsMock).toHaveBeenCalled());
+
+    expect(await db.loggedSets.where('session_id').equals(42).count()).toBe(1);
+  });
+
+  it('a failed recovery fetch (offline) leaves the screen working exactly as before', async () => {
+    getSessionSetsMock.mockRejectedValue(new Error('offline'));
+    await seedCache([makeSlot({ id: 100, exercise: { id: 10, slug: 'a', name: 'Exercise A', unilateral: false, increment_kg: 2.5 } })]);
+
+    renderOverview();
+
+    expect(await screen.findByText('Exercise A')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument();
   });
 });

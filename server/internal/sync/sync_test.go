@@ -3,6 +3,7 @@ package sync_test
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/ajayrajen7/anyway/server/internal/db"
@@ -233,5 +234,127 @@ func TestDrainProcessesEveryEntryIndependently(t *testing.T) {
 	conn.QueryRow(`SELECT COUNT(*) FROM logged_sets WHERE client_uuid = 'uuid-2'`).Scan(&count)
 	if count != 1 {
 		t.Fatalf("expected the valid logged_set to have been written, got count=%d", count)
+	}
+}
+
+// ListSetsForSession — the recovery read path (GET /api/sessions/:id/sets),
+// see the doc comment on the function itself for why it exists.
+func TestListSetsForSessionReturnsEveryLoggedSetInOrder(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, exerciseID := seedOneSession(t, conn)
+
+	load1, reps1 := 60.0, 8
+	load2, reps2 := 62.5, 6
+	if err := syncpkg.LogSet(ctx, conn, syncpkg.SetPayload{
+		ClientUUID: "uuid-a", SessionID: sessionID, ExerciseID: exerciseID,
+		SetIndex: 1, LoadKg: &load1, Reps: &reps1, Status: "done",
+		Provenance: "prescribed", LoggedAt: "2026-01-05T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("LogSet 1: %v", err)
+	}
+	if err := syncpkg.LogSet(ctx, conn, syncpkg.SetPayload{
+		ClientUUID: "uuid-b", SessionID: sessionID, ExerciseID: exerciseID,
+		SetIndex: 2, LoadKg: &load2, Reps: &reps2, Status: "done",
+		Provenance: "prescribed", LoggedAt: "2026-01-05T10:05:00Z",
+	}); err != nil {
+		t.Fatalf("LogSet 2: %v", err)
+	}
+
+	sets, err := syncpkg.ListSetsForSession(ctx, conn, sessionID)
+	if err != nil {
+		t.Fatalf("ListSetsForSession: %v", err)
+	}
+	if len(sets) != 2 {
+		t.Fatalf("expected 2 sets, got %d", len(sets))
+	}
+	if sets[0].ClientUUID != "uuid-a" || sets[1].ClientUUID != "uuid-b" {
+		t.Fatalf("expected sets back in write order, got %+v", sets)
+	}
+	if sets[0].SessionID != sessionID || sets[0].SetIndex != 1 || *sets[0].LoadKg != 60.0 {
+		t.Fatalf("expected the first set's own fields intact, got %+v", sets[0])
+	}
+}
+
+func TestListSetsForSessionIsEmptyForANoSetsSession(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, _ := seedOneSession(t, conn)
+
+	sets, err := syncpkg.ListSetsForSession(ctx, conn, sessionID)
+	if err != nil {
+		t.Fatalf("ListSetsForSession: %v", err)
+	}
+	if len(sets) != 0 {
+		t.Fatalf("expected no sets, got %d", len(sets))
+	}
+}
+
+func TestListSetsForSessionDoesNotConflateOtherSessions(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, exerciseID := seedOneSession(t, conn)
+	// A second session — sessions.date is UNIQUE, so seedOneSession's own
+	// hardcoded date can't be reused; insert this one directly with a
+	// different date instead.
+	res, err := conn.Exec(`INSERT INTO sessions (date, status) VALUES ('2026-01-06', 'planned')`)
+	if err != nil {
+		t.Fatalf("seed other session: %v", err)
+	}
+	otherSessionID, _ := res.LastInsertId()
+
+	load, reps := 60.0, 8
+	if err := syncpkg.LogSet(ctx, conn, syncpkg.SetPayload{
+		ClientUUID: "uuid-mine", SessionID: sessionID, ExerciseID: exerciseID,
+		SetIndex: 1, LoadKg: &load, Reps: &reps, Status: "done",
+		Provenance: "prescribed", LoggedAt: "2026-01-05T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("LogSet mine: %v", err)
+	}
+	if err := syncpkg.LogSet(ctx, conn, syncpkg.SetPayload{
+		ClientUUID: "uuid-other", SessionID: otherSessionID, ExerciseID: exerciseID,
+		SetIndex: 1, LoadKg: &load, Reps: &reps, Status: "done",
+		Provenance: "prescribed", LoggedAt: "2026-01-06T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("LogSet other: %v", err)
+	}
+
+	sets, err := syncpkg.ListSetsForSession(ctx, conn, sessionID)
+	if err != nil {
+		t.Fatalf("ListSetsForSession: %v", err)
+	}
+	if len(sets) != 1 || sets[0].ClientUUID != "uuid-mine" {
+		t.Fatalf("expected only the requested session's own set, got %+v", sets)
+	}
+}
+
+// A pre-M9 row can have a NULL client_uuid — that column started as a bare
+// nullable ALTER TABLE (migration 0003), before the sync worker existed to
+// always supply one. The client's LoggedSet schema requires a non-empty
+// string, so this must never come back as null/empty.
+func TestListSetsForSessionSynthesizesAClientUUIDForALegacyNullRow(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, exerciseID := seedOneSession(t, conn)
+
+	res, err := conn.Exec(`
+		INSERT INTO logged_sets (session_id, exercise_id, set_index, load_kg, reps, status, provenance, logged_at, client_uuid)
+		VALUES (?, ?, 1, 60, 8, 'done', 'prescribed', '2026-01-05T10:00:00Z', NULL)
+	`, sessionID, exerciseID)
+	if err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	rowID, _ := res.LastInsertId()
+
+	sets, err := syncpkg.ListSetsForSession(ctx, conn, sessionID)
+	if err != nil {
+		t.Fatalf("ListSetsForSession: %v", err)
+	}
+	if len(sets) != 1 {
+		t.Fatalf("expected 1 set, got %d", len(sets))
+	}
+	want := fmt.Sprintf("srv-%d", rowID)
+	if sets[0].ClientUUID != want {
+		t.Fatalf("expected a synthesized client_uuid %q, got %q", want, sets[0].ClientUUID)
 	}
 }

@@ -1,9 +1,18 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../lib/db';
 import { logSet } from '../lib/outbox';
 import SessionSummary from './SessionSummary';
+
+// See SessionOverview.test.tsx's identical setup — getSessionSets is the
+// one network call this screen makes (a best-effort background recovery
+// merge, see outbox.ts#hydrateSessionFromServer).
+const { getSessionSetsMock } = vi.hoisted(() => ({ getSessionSetsMock: vi.fn() }));
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return { ...actual, getSessionSets: getSessionSetsMock };
+});
 
 function renderSummary(sessionId = 42) {
   return render(
@@ -15,6 +24,11 @@ function renderSummary(sessionId = 42) {
     </MemoryRouter>,
   );
 }
+
+beforeEach(() => {
+  getSessionSetsMock.mockReset();
+  getSessionSetsMock.mockResolvedValue([]); // "nothing to recover" default — the recovery test below overrides it
+});
 
 afterEach(async () => {
   await db.loggedSets.clear();
@@ -51,5 +65,34 @@ describe('SessionSummary', () => {
     renderSummary(42);
     const link = await screen.findByRole('link', { name: 'Done' });
     expect(link).toHaveAttribute('href', '/');
+  });
+
+  // Real bug fixed here: a genuine "0 sets done, 0 skipped, 0 kg" (all the
+  // session's local data gone — see memory.md's "session data lost" entry)
+  // becomes the real total once the recovery fetch finds what the server
+  // actually has.
+  it('recovers the real totals from the server when the local copy has nothing for this session', async () => {
+    getSessionSetsMock.mockResolvedValue([
+      { id: 501, client_uuid: 'server-uuid-1', session_id: 42, slot_id: 1, exercise_id: 10, set_index: 1, load_kg: 20, reps: 10, status: 'done', provenance: 'prescribed', added_by: null, logged_at: '2026-01-05T10:00:00Z' },
+      { id: 502, client_uuid: 'server-uuid-2', session_id: 42, slot_id: 1, exercise_id: 10, set_index: 2, load_kg: 20, reps: 8, status: 'done', provenance: 'prescribed', added_by: null, logged_at: '2026-01-05T10:01:00Z' },
+    ]);
+
+    renderSummary(42);
+    await screen.findByText('0 sets done'); // renders from the (empty) local copy first, same as before
+
+    expect(await screen.findByText('2 sets done')).toBeInTheDocument();
+    expect(screen.getByText(`${20 * 10 + 20 * 8} kg total volume`)).toBeInTheDocument();
+    expect(await db.loggedSets.where('session_id').equals(42).count()).toBe(2);
+  });
+
+  it('a failed recovery fetch (offline) leaves the real local totals showing, unchanged', async () => {
+    getSessionSetsMock.mockRejectedValue(new Error('offline'));
+    await logSet({ sessionId: 42, slotId: 1, exerciseId: 10, setIndex: 1, loadKg: 20, reps: 10, status: 'done' });
+
+    renderSummary(42);
+
+    expect(await screen.findByText('1 sets done')).toBeInTheDocument();
+    await waitFor(() => expect(getSessionSetsMock).toHaveBeenCalled());
+    expect(screen.getByText('1 sets done')).toBeInTheDocument(); // unchanged after the failed attempt resolves
   });
 });

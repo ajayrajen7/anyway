@@ -64,6 +64,20 @@ func NewRouter(conn *sql.DB, token string, gen exerciseGenerator) chi.Router {
 		// nothing server-side for this route to persist. See memory.md (M9).
 		r.Post("/sessions/{id}/add", notImplemented)
 		r.Post("/sessions/{id}/complete", postCompleteSession(conn))
+		// A deliberate, narrow read path back out of logged_sets — the one
+		// exception to this server's otherwise write-only relationship with
+		// that table (see syncpkg.ListSetsForSession's doc). Exists purely
+		// so a client whose local copy of a session's detail has gone
+		// missing (a separate iOS "Add to Home Screen" storage container,
+		// cleared site data, a reinstalled PWA — see memory.md's "session
+		// data lost" entry) can reconstruct it, rather than that detail
+		// being permanently gone even though the server has every set the
+		// client ever successfully synced. The client only ever calls this
+		// as a best-effort background merge (src/lib/outbox.ts#hydrateSessionFromServer),
+		// never on the live set-logging path — B6.1's "session runner never
+		// awaits a network call" is about *logging*, not this after-the-fact
+		// recovery read.
+		r.Get("/sessions/{id}/sets", getSessionSets(conn))
 		r.Get("/exercises", listExercises(conn))
 		// Real-time LLM-drafted exercise creation — the one deliberate
 		// online-only step in this otherwise offline-first app. See
@@ -321,6 +335,27 @@ func postCompleteSession(conn *sql.DB) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// getSessionSets implements GET /api/sessions/:id/sets — see the route
+// comment and syncpkg.ListSetsForSession's doc for why this one read path
+// exists. Always 200s with an (possibly empty) array, even for a session id
+// that doesn't exist — the client only ever uses this to fill in gaps in
+// its own local copy, so "nothing to add" and "no such session" look the
+// same to it and need no separate handling.
+func getSessionSets(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID, ok := pathInt64(w, r, "id")
+		if !ok {
+			return
+		}
+		sets, err := syncpkg.ListSetsForSession(r.Context(), conn, sessionID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"sets": sets})
 	}
 }
 

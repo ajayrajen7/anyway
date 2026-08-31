@@ -216,6 +216,76 @@ func TestPostLogSetUsesPathIDAndIsIdempotent(t *testing.T) {
 	}
 }
 
+// GET /api/sessions/:id/sets — the recovery read path (see the route's own
+// comment in api.go and syncpkg.ListSetsForSession's doc for why it exists).
+func TestGetSessionSetsReturnsWhatWasLogged(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.Exec(`INSERT INTO exercises (slug, name, equipment, pressure, impact, increment_kg) VALUES ('squat','Squat','barbell','moderate','low',2.5)`); err != nil {
+		t.Fatalf("seed exercise: %v", err)
+	}
+	if _, err := conn.Exec(`INSERT INTO sessions (id, date, status) VALUES (7, '2026-01-05', 'completed')`); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	router := api.NewRouter(conn, "secret", nil)
+	load := 60.0
+	reps := 8
+	payload := syncpkg.SetPayload{
+		ClientUUID: "route-uuid-2", ExerciseID: 1, SetIndex: 1,
+		LoadKg: &load, Reps: &reps, Status: "done", Provenance: "prescribed", LoggedAt: "2026-01-05T10:00:00Z",
+	}
+	if rec := doJSON(t, router, http.MethodPost, "/api/sessions/7/sets", payload); rec.Code != http.StatusNoContent {
+		t.Fatalf("seed via POST: expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec := doJSON(t, router, http.MethodGet, "/api/sessions/7/sets", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Sets []syncpkg.SetRecord `json:"sets"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Sets) != 1 {
+		t.Fatalf("expected 1 set, got %d", len(got.Sets))
+	}
+	if got.Sets[0].ClientUUID != "route-uuid-2" || got.Sets[0].SessionID != 7 {
+		t.Fatalf("expected the just-logged set back, got %+v", got.Sets[0])
+	}
+}
+
+func TestGetSessionSetsIsEmptyArrayNotErrorForANoSetsSession(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.Exec(`INSERT INTO sessions (id, date, status) VALUES (9, '2026-01-06', 'planned')`); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	router := api.NewRouter(conn, "secret", nil)
+	rec := doJSON(t, router, http.MethodGet, "/api/sessions/9/sets", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Sets []syncpkg.SetRecord `json:"sets"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Sets == nil || len(got.Sets) != 0 {
+		t.Fatalf("expected an empty array (not null, not an error), got %+v", got.Sets)
+	}
+}
+
 func TestPostStepsWrites(t *testing.T) {
 	conn, err := db.Open(":memory:")
 	if err != nil {
