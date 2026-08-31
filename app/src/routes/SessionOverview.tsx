@@ -5,7 +5,7 @@
 // same reasoning as the old SessionRunner's nested sheets (M5).
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
-import { primaryButtonClass, secondaryButtonClass } from '../components/ui';
+import { Pill, primaryButtonClass, secondaryButtonClass } from '../components/ui';
 import { getCachedToday } from '../lib/todayCache';
 import { getOverlay, removeExercise } from '../lib/overlay';
 import { hydrateSessionFromServer, loggedSetsForSession } from '../lib/outbox';
@@ -73,6 +73,15 @@ export default function SessionOverview() {
   }
 
   const firstIncomplete = slots.find((s) => status(s) !== 'done') ?? slots[0];
+  // "Finish session →" implies the session isn't done yet — showing it
+  // unconditionally, even after POST /api/sessions/:id/complete has already
+  // gone through, read as "it lets me finish it again" (owner, diagnosing
+  // the "session data lost" bug: "It cannot be there, there could be an
+  // edit session for a completed session"). completeSession() itself is
+  // harmlessly idempotent either way (see SessionSummary.tsx), so this is
+  // purely about not presenting a not-yet-done action for a day that's
+  // already done.
+  const isCompleted = cached.data.session?.status === 'completed';
 
   function status(slot: RunnerSlot): SlotStatus {
     const setsForExercise = loggedSets.filter((s) => s.exercise_id === slot.exercise.id);
@@ -82,7 +91,10 @@ export default function SessionOverview() {
   return (
     <main className="mx-auto max-w-md p-4">
       <h1 className="text-2xl font-semibold">{cached.data.day_template.name}</h1>
-      <p className="mt-1 text-sm text-ink-muted">{slots.length} exercises</p>
+      <div className="mt-1 flex items-center gap-2">
+        <p className="text-sm text-ink-muted">{slots.length} exercises</p>
+        {isCompleted && <Pill tone="accent">✓ Session complete</Pill>}
+      </div>
 
       {firstIncomplete && (
         <button
@@ -112,7 +124,7 @@ export default function SessionOverview() {
           + Add exercise
         </Link>
         <Link to={`/session/${sessionId}/done`} className={`flex-1 text-sm ${secondaryButtonClass}`}>
-          Finish session →
+          {isCompleted ? 'View summary →' : 'Finish session →'}
         </Link>
       </div>
 

@@ -32,12 +32,12 @@ function makeSlot(overrides: Partial<TodaySlot> = {}): TodaySlot {
   };
 }
 
-async function seedCache(slots: TodaySlot[], sessionId = 42) {
+async function seedCache(slots: TodaySlot[], sessionId = 42, status: 'planned' | 'completed' | 'missed' = 'planned') {
   const data: CachedToday['data'] = {
     date: '2026-01-05',
     weekday: 1,
     day_template: { id: 1, name: 'Lower A', kind: 'lifting' },
-    session: { id: sessionId, status: 'planned', started_at: null, ended_at: null, note: null },
+    session: { id: sessionId, status, started_at: null, ended_at: null, note: null },
     slots,
   };
   await db.todayCache.put({ sessionId, date: data.date, cachedAt: new Date().toISOString(), data });
@@ -82,6 +82,29 @@ describe('SessionOverview', () => {
     expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '+ Add exercise' })).toHaveAttribute('href', '/session/42/add');
     expect(screen.getByRole('link', { name: 'Finish session →' })).toHaveAttribute('href', '/session/42/done');
+  });
+
+  // Real bug fixed here: the link showed "Finish session →" unconditionally,
+  // even for a session already marked complete — reading as "it lets me
+  // finish it again." Owner, diagnosing a separate bug: "there could be an
+  // edit session for a completed session." See memory.md.
+  it('shows "Session complete" and a "View summary" link instead of "Finish session" once the session is done', async () => {
+    await seedCache([makeSlot()], 42, 'completed');
+    renderOverview();
+
+    expect(await screen.findByText('✓ Session complete')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Finish session →' })).not.toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'View summary →' });
+    expect(link).toHaveAttribute('href', '/session/42/done');
+  });
+
+  it('still shows "Finish session" (not "Session complete") for a not-yet-done session', async () => {
+    await seedCache([makeSlot()], 42, 'planned');
+    renderOverview();
+
+    await screen.findByText('Leg press');
+    expect(screen.queryByText('✓ Session complete')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Finish session →' })).toBeInTheDocument();
   });
 
   it('shows a graceful message when nothing has been cached offline', async () => {
