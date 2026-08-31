@@ -18,7 +18,7 @@ import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { Card, Pill, ProgressBar, primaryButtonClass, secondaryButtonClass } from '../components/ui';
 import { getCachedToday } from '../lib/todayCache';
 import { getOverlay } from '../lib/overlay';
-import { loggedSetsFor, logSet } from '../lib/outbox';
+import { loggedSetsFor, logSet, undoLogSet } from '../lib/outbox';
 import { buildRunnerSlots, clampNonNegative, isSwipeLeft, prefillFor, type RunnerOutletContext, type RunnerSlot } from '../lib/session';
 import type { CachedToday, LoggedSet, SessionOverlay } from '../lib/types';
 
@@ -28,14 +28,17 @@ interface RowState {
   loadKg: number | null;
   reps: number;
   editing: 'weight' | 'reps' | null;
+  // The Dexie/outbox key for this row's commit, once logged — undoRow needs
+  // it to delete exactly that entry. null while pending.
+  clientUuid: string | null;
 }
 
 function rowFromExisting(existing: LoggedSet | undefined, slot: RunnerSlot): RowState {
   if (existing) {
-    return { status: existing.status, loadKg: existing.load_kg, reps: existing.reps ?? 0, editing: null };
+    return { status: existing.status, loadKg: existing.load_kg, reps: existing.reps ?? 0, editing: null, clientUuid: existing.client_uuid };
   }
   const prefill = prefillFor(slot);
-  return { status: 'pending', loadKg: prefill.loadKg, reps: prefill.reps, editing: null };
+  return { status: 'pending', loadKg: prefill.loadKg, reps: prefill.reps, editing: null, clientUuid: null };
 }
 
 export default function SessionExercise() {
@@ -140,6 +143,13 @@ function ExercisePanel({
   const [rows, setRows] = useState<RowState[]>([]);
   const [rowsReady, setRowsReady] = useState(false);
   const [restSince, setRestSince] = useState<string | null>(null);
+  // The reference mockup's "UNDO SET" — restored here after being missing
+  // from the M12 rebuild. Single most-recent action, not a full undo stack
+  // (matches the reference's own single link, not a per-row affordance) —
+  // reset to null on any further commit or on switching exercises (this
+  // whole panel remounts fresh via key={slot.key} in the parent, so a
+  // stale index can never point at the wrong exercise).
+  const [lastCommittedIndex, setLastCommittedIndex] = useState<number | null>(null);
 
   // Reconstruct this exercise's row state from Dexie on every visit — never
   // trust only in-memory state (B2: Dexie is the source of truth, not a
@@ -163,7 +173,7 @@ function ExercisePanel({
   async function commitRow(rowIndex: number, status: 'done' | 'skipped') {
     const row = rows[rowIndex];
     const logged = status === 'done' ? { loadKg: row.loadKg, reps: row.reps } : { loadKg: null, reps: null };
-    await logSet({
+    const saved = await logSet({
       sessionId,
       slotId: slot.slotId,
       exerciseId: slot.exercise.id,
@@ -174,8 +184,18 @@ function ExercisePanel({
       provenance: slot.provenance,
       addedBy: slot.addedBy,
     });
-    setRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, status, editing: null } : r)));
+    setRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, status, editing: null, clientUuid: saved.client_uuid } : r)));
     if (status === 'done') setRestSince(new Date().toISOString());
+    setLastCommittedIndex(rowIndex);
+  }
+
+  async function undoLastCommit() {
+    if (lastCommittedIndex == null) return;
+    const row = rows[lastCommittedIndex];
+    if (!row.clientUuid) return;
+    await undoLogSet(row.clientUuid);
+    setRows((prev) => prev.map((r, i) => (i === lastCommittedIndex ? { ...r, status: 'pending', clientUuid: null } : r)));
+    setLastCommittedIndex(null);
   }
 
   async function skipExercise() {
@@ -189,7 +209,14 @@ function ExercisePanel({
 
   return (
     <>
-      <h1 className="mt-3 text-2xl font-semibold uppercase">{slot.exercise.name}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="mt-3 text-2xl font-semibold uppercase">{slot.exercise.name}</h1>
+        {lastCommittedIndex != null && (
+          <button type="button" onClick={undoLastCommit} className="text-sm text-accent underline">
+            Undo set {lastCommittedIndex + 1}
+          </button>
+        )}
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {slot.provenance === 'added' && <Pill tone="accent">Added — {slot.addedBy === 'trainer' ? "trainer's call" : 'my call'}</Pill>}
         {slot.note && <Pill>{slot.note}</Pill>}

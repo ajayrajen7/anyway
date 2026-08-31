@@ -111,6 +111,36 @@ describe('SessionExercise — logging a set', () => {
     expect(stored[0]).toMatchObject({ status: 'skipped', load_kg: null, reps: null });
   });
 
+  it('Undo reverts the just-logged set back to pending, in the UI and in Dexie', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot({ sets: 1, load_kg: 20, reps: 12 })]);
+    renderExercise();
+
+    await user.click(await screen.findByRole('button', { name: 'Log set 1' }));
+    await waitFor(() => expect(screen.getByText('done')).toBeInTheDocument());
+
+    await user.click(await screen.findByRole('button', { name: 'Undo set 1' }));
+
+    await waitFor(() => expect(screen.queryByText('done')).not.toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: 'Log set 1' })).toBeInTheDocument();
+    expect(await db.loggedSets.toArray()).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Undo set/ })).not.toBeInTheDocument();
+  });
+
+  it('only offers Undo for the most recently logged set, not earlier ones', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot({ sets: 2, load_kg: 20, reps: 12 })]);
+    renderExercise();
+
+    await user.click(await screen.findByRole('button', { name: 'Log set 1' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Undo set 1' })).toBeInTheDocument());
+
+    await user.click(await screen.findByRole('button', { name: 'Log set 2' }));
+
+    expect(await screen.findByRole('button', { name: 'Undo set 2' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo set 1' })).not.toBeInTheDocument();
+  });
+
   it('reconstructs already-logged rows from Dexie on remount, not just React state', async () => {
     await seedCache([makeSlot({ sets: 2, load_kg: 20, reps: 12 })]);
     const { unmount } = renderExercise();

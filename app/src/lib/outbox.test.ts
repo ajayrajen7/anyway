@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { db } from './db';
-import { logSet, loggedSetsFor } from './outbox';
+import { logSet, loggedSetsFor, undoLogSet } from './outbox';
 
 afterEach(async () => {
   await db.loggedSets.clear();
@@ -32,6 +32,28 @@ describe('logSet', () => {
   it('defaults provenance to prescribed', async () => {
     const set = await logSet({ sessionId: 1, slotId: 5, exerciseId: 10, setIndex: 1, loadKg: 20, reps: 10, status: 'done' });
     expect(set.provenance).toBe('prescribed');
+  });
+});
+
+describe('undoLogSet', () => {
+  it('deletes the loggedSets row and its not-yet-synced outbox entry', async () => {
+    const set = await logSet({ sessionId: 1, slotId: 5, exerciseId: 10, setIndex: 1, loadKg: 20, reps: 12, status: 'done' });
+
+    await undoLogSet(set.client_uuid);
+
+    expect(await db.loggedSets.toArray()).toHaveLength(0);
+    expect(await db.outbox.where({ entity: 'logged_set', entity_id: set.client_uuid }).toArray()).toHaveLength(0);
+  });
+
+  it('leaves other logged sets untouched', async () => {
+    const first = await logSet({ sessionId: 1, slotId: 5, exerciseId: 10, setIndex: 1, loadKg: 20, reps: 12, status: 'done' });
+    await logSet({ sessionId: 1, slotId: 5, exerciseId: 10, setIndex: 2, loadKg: 20, reps: 10, status: 'done' });
+
+    await undoLogSet(first.client_uuid);
+
+    const remaining = await db.loggedSets.toArray();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].set_index).toBe(2);
   });
 });
 

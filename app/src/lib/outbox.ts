@@ -51,6 +51,26 @@ export async function logSet(input: LogSetInput): Promise<LoggedSet> {
   return set;
 }
 
+// Reverts a just-logged set back to pending — the "UNDO SET" affordance
+// from the reference mockup, restored in a follow-up (it was missing from
+// the M12 rebuild). Deletes the local loggedSets row and, if it hasn't
+// synced yet, its queued outbox entry too — meant for "I tapped the wrong
+// thing, undo it" right after logging, not a general edit-history
+// capability. logged_sets is otherwise a deliberate append-only ledger
+// server-side (M9: a committed set is never revised through the sync
+// path, only ever a new entry — see server/internal/sync#LogSet's own
+// ON CONFLICT DO NOTHING). If this particular set already synced before
+// Undo was tapped (the sync worker is foreground-triggered, so the window
+// is small but not zero), the server keeps its own copy of the now-undone
+// set — a rare, harmless discrepancy versus giving this app a permanent,
+// always-on delete-from-server capability it was never meant to have.
+export async function undoLogSet(clientUuid: string): Promise<void> {
+  await db.transaction('rw', db.loggedSets, db.outbox, async () => {
+    await db.loggedSets.where('client_uuid').equals(clientUuid).delete();
+    await db.outbox.where({ entity: 'logged_set', entity_id: clientUuid }).delete();
+  });
+}
+
 // Sets already logged for a session+exercise, keyed by set_index — the
 // reconstruction SessionRunner uses on every mount so its state always comes
 // from Dexie, never only from in-memory React state (§B2: Dexie is the
