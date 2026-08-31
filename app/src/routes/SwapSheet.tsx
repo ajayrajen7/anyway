@@ -11,7 +11,7 @@ import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import SheetShell from '../components/SheetShell';
 import { searchExercisesOffline } from '../lib/exerciseCache';
 import { applySwap } from '../lib/overlay';
-import type { RunnerOutletContext } from './SessionRunner';
+import type { RunnerOutletContext } from '../lib/session';
 import type { Exercise, ExerciseRef } from '../lib/types';
 
 export default function SwapSheet() {

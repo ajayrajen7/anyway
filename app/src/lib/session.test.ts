@@ -3,6 +3,7 @@ import {
   buildRunnerSlots,
   clampNonNegative,
   computeSessionTotals,
+  computeSlotStatus,
   isSwipeLeft,
   prefillFor,
   SWIPE_SKIP_THRESHOLD_PX,
@@ -111,7 +112,7 @@ describe('buildRunnerSlots', () => {
   }
 
   function emptyOverlay(): SessionOverlay {
-    return { sessionId: 42, swaps: {}, added: [] };
+    return { sessionId: 42, swaps: {}, added: [], removed: [] };
   }
 
   it('with no overlay, mirrors the prescribed slots exactly, in order, with provenance "prescribed"', () => {
@@ -126,7 +127,7 @@ describe('buildRunnerSlots', () => {
       makeSlot({ id: 1, position: 1, exercise: exA, last_actual: { load_kg: 30, reps: 10 } }),
       makeSlot({ id: 2, position: 2, exercise: exB }),
     ]);
-    const overlay: SessionOverlay = { sessionId: 42, swaps: { '1': { exercise: swapEx, provenance: 'swap_in_list' } }, added: [] };
+    const overlay: SessionOverlay = { sessionId: 42, swaps: { '1': { exercise: swapEx, provenance: 'swap_in_list' } }, added: [], removed: [] };
     const result = buildRunnerSlots(data, overlay);
 
     expect(result[0]).toMatchObject({ key: 'slot-1', exercise: swapEx, provenance: 'swap_in_list', lastActual: null, slotId: 1 });
@@ -136,7 +137,7 @@ describe('buildRunnerSlots', () => {
   it('an added exercise with after_key=null is appended at the end', () => {
     const data = makeData([makeSlot({ id: 1, position: 1, exercise: exA })]);
     const added: AddedSlot = { id: 'a1', exercise: addedEx, sets: 3, reps: 10, load_kg: null, added_by: 'trainer', after_key: null };
-    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added] });
+    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added], removed: [] });
 
     expect(result.map((s) => s.key)).toEqual(['slot-1', 'added-a1']);
     expect(result[1]).toMatchObject({ slotId: null, exercise: addedEx, provenance: 'added', addedBy: 'trainer' });
@@ -148,7 +149,7 @@ describe('buildRunnerSlots', () => {
       makeSlot({ id: 2, position: 2, exercise: exB }),
     ]);
     const added: AddedSlot = { id: 'a1', exercise: addedEx, sets: 3, reps: 10, load_kg: null, added_by: 'me', after_key: 'slot-1' };
-    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added] });
+    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added], removed: [] });
 
     expect(result.map((s) => s.key)).toEqual(['slot-1', 'added-a1', 'slot-2']);
   });
@@ -157,7 +158,7 @@ describe('buildRunnerSlots', () => {
     const data = makeData([makeSlot({ id: 1, position: 1, exercise: exA })]);
     const first: AddedSlot = { id: 'a1', exercise: addedEx, sets: 3, reps: 10, load_kg: null, added_by: 'me', after_key: 'slot-1' };
     const second: AddedSlot = { id: 'a2', exercise: exB, sets: 3, reps: 10, load_kg: null, added_by: 'trainer', after_key: 'added-a1' };
-    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [first, second] });
+    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [first, second], removed: [] });
 
     expect(result.map((s) => s.key)).toEqual(['slot-1', 'added-a1', 'added-a2']);
   });
@@ -165,14 +166,51 @@ describe('buildRunnerSlots', () => {
   it('falls back to appending at the end if after_key does not match anything', () => {
     const data = makeData([makeSlot({ id: 1, position: 1, exercise: exA })]);
     const added: AddedSlot = { id: 'a1', exercise: addedEx, sets: 3, reps: 10, load_kg: null, added_by: 'me', after_key: 'slot-999' };
-    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added] });
+    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added], removed: [] });
     expect(result.map((s) => s.key)).toEqual(['slot-1', 'added-a1']);
   });
 
   it('an added exercise carries no tier-1 swaps of its own', () => {
     const data = makeData([]);
     const added: AddedSlot = { id: 'a1', exercise: addedEx, sets: 3, reps: 10, load_kg: null, added_by: 'me', after_key: null };
-    const result: RunnerSlot[] = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added] });
+    const result: RunnerSlot[] = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added], removed: [] });
     expect(result[0]?.swaps).toEqual([]);
+  });
+
+  it('a deleted prescribed slot never appears in the list at all (UX refactor)', () => {
+    const data = makeData([makeSlot({ id: 1, position: 1, exercise: exA }), makeSlot({ id: 2, position: 2, exercise: exB })]);
+    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [], removed: ['slot-1'] });
+    expect(result.map((s) => s.key)).toEqual(['slot-2']);
+  });
+
+  it('a deleted added exercise never appears either', () => {
+    const data = makeData([makeSlot({ id: 1, position: 1, exercise: exA })]);
+    const added: AddedSlot = { id: 'a1', exercise: addedEx, sets: 3, reps: 10, load_kg: null, added_by: 'me', after_key: null };
+    const result = buildRunnerSlots(data, { sessionId: 42, swaps: {}, added: [added], removed: ['added-a1'] });
+    expect(result.map((s) => s.key)).toEqual(['slot-1']);
+  });
+});
+
+describe('computeSlotStatus', () => {
+  function set(overrides: Partial<LoggedSet>): LoggedSet {
+    return {
+      client_uuid: 'u', session_id: 1, slot_id: 1, exercise_id: 1, set_index: 1,
+      load_kg: null, reps: null, status: 'done', provenance: 'prescribed', added_by: null,
+      logged_at: '2026-01-05T09:00:00Z',
+      ...overrides,
+    };
+  }
+
+  it('is pending when nothing has been resolved', () => {
+    expect(computeSlotStatus([], 3)).toBe('pending');
+  });
+
+  it('is in_progress when some but not all sets are resolved', () => {
+    expect(computeSlotStatus([set({ set_index: 1, status: 'done' })], 3)).toBe('in_progress');
+  });
+
+  it('is done once every set is resolved, done or skipped', () => {
+    const sets = [set({ set_index: 1, status: 'done' }), set({ set_index: 2, status: 'skipped' }), set({ set_index: 3, status: 'done' })];
+    expect(computeSlotStatus(sets, 3)).toBe('done');
   });
 });

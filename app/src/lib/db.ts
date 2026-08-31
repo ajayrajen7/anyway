@@ -13,7 +13,7 @@ import type {
   OutboxEntry,
   ProteinLog,
   SessionOverlay,
-  WeighIn,
+  StepsLog,
 } from './types';
 
 export class AppDatabase extends Dexie {
@@ -27,7 +27,7 @@ export class AppDatabase extends Dexie {
   mobilityLogs!: Table<MobilityLog, string>;
   cardioLogs!: Table<CardioLog, number>;
   programmeCache!: Table<CachedProgramme, number>;
-  weighIns!: Table<WeighIn, string>;
+  stepsLogs!: Table<StepsLog, string>;
 
   constructor() {
     super('anyway');
@@ -72,12 +72,15 @@ export class AppDatabase extends Dexie {
     this.version(5).stores({
       programmeCache: 'id',
     });
-    // M9: weigh-ins (prd.md §A4, "the Vault") — keyed by date like the other
-    // once-a-day logs. There is deliberately no read helper anywhere in this
-    // codebase that exposes `weight_kg` back to a UI component; see
-    // src/lib/weighIn.ts.
-    this.version(6).stores({
-      weighIns: 'date',
+    // M9: weigh-ins (prd.md's old §A4, "the Vault") — dropped entirely in
+    // the UX refactor (the owner doesn't want weight tracking). `weighIns`
+    // is removed (`null` deletes a store on upgrade — Dexie's own way to
+    // drop a table) rather than left behind as dead schema, and
+    // `stepsLogs` (a real daily count, alongside protein) takes its slot
+    // in this version bump. See memory.md.
+    this.version(7).stores({
+      weighIns: null,
+      stepsLogs: 'date',
     });
   }
 }

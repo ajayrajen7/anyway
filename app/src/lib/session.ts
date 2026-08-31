@@ -1,7 +1,7 @@
 // Pure helpers for the session runner (M4/M5) — kept free of Dexie/React so
 // they're trivial to unit test. See src/lib/outbox.ts for the actual writes,
 // src/lib/overlay.ts for the swap/add-exercise Dexie layer.
-import type { Actual, ExerciseRef, LoggedSet, Provenance, SessionOverlay, TodayResponse } from './types';
+import type { Actual, CachedToday, ExerciseRef, LoggedSet, Provenance, SessionOverlay, TodayResponse } from './types';
 
 export interface SetValues {
   loadKg: number | null;
@@ -83,7 +83,11 @@ export function buildRunnerSlots(data: TodayResponse, overlay: SessionOverlay): 
       result.splice(afterIndex + 1, 0, runnerSlot);
     }
   }
-  return result;
+
+  // Deletions (UX refactor) apply last, after swaps and interleaving —
+  // a deleted exercise simply never appears in the session's list at all,
+  // no matter whether it was prescribed or added.
+  return result.filter((s) => !overlay.removed.includes(s.key));
 }
 
 // Neither a weight nor a rep count can go negative via the stepper.
@@ -91,11 +95,35 @@ export function clampNonNegative(n: number): number {
   return Math.max(0, n);
 }
 
+// What the nested Swap/Add sheets read via useOutletContext — everything
+// they need to act, without re-fetching what their parent screen already
+// loaded. Shared by SessionOverview (parent of Add) and SessionExercise
+// (parent of Swap) — see docs/architecture.md §B6.1's amendment.
+export interface RunnerOutletContext {
+  sessionId: number;
+  data: CachedToday['data'];
+  currentSlot: RunnerSlot | undefined; // the exercise being viewed when the sheet was opened, if any
+  onOverlayChange: () => void; // call after writing to sessionOverlay, before navigating back
+}
+
 // "Swipe row left → skipped" (§A3.3). A pure threshold check so the gesture
 // math is testable without simulating real touch/pointer events.
 export const SWIPE_SKIP_THRESHOLD_PX = 80;
 export function isSwipeLeft(deltaX: number): boolean {
   return deltaX <= -SWIPE_SKIP_THRESHOLD_PX;
+}
+
+// The session's exercise-list screen (UX refactor) shows a status per
+// exercise without needing to open it. "in_progress" — some but not all of
+// its sets resolved — matters: a partially-logged exercise should read
+// differently from one nothing has happened on yet.
+export type SlotStatus = 'pending' | 'in_progress' | 'done';
+
+export function computeSlotStatus(setsForExercise: LoggedSet[], totalSets: number): SlotStatus {
+  const resolved = setsForExercise.filter((s) => s.status === 'done' || s.status === 'skipped').length;
+  if (resolved === 0) return 'pending';
+  if (resolved >= totalSets) return 'done';
+  return 'in_progress';
 }
 
 export interface SessionTotals {

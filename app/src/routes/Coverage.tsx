@@ -1,11 +1,7 @@
-// A3.7 Week View (`/week`) — the only non-capture screen in v1. Coverage
-// numbers AND the 7-day pain strip render in one scroll view — never split
-// into tabs/routes (§B6.5). Descriptive only: no correlation, no trend
-// lines, no multi-week charts, no generated insight text (§B6.6).
-//
-// Computed entirely offline from Dexie (see src/lib/week.ts for why this
-// isn't a GET /api/week call): the cached GET /api/programme response for
-// prescribed coverage, local loggedSets/morningChecks for actual.
+// UX refactor: Coverage (`/coverage`) — one of the Coverage/Week Plan split
+// of the old single Week View. Muscle-group coverage, total volume, and the
+// pain strip, for a chosen week — navigable back/forward (previously fixed
+// to "this week" only). Still fully offline (see src/lib/week.ts).
 import { useEffect, useState } from 'react';
 import { db } from '../lib/db';
 import { localDateKey } from '../lib/date';
@@ -17,10 +13,12 @@ import {
   computePrescribedCoverage,
   computeWeeklyVolume,
   datesInWeek,
+  nextWeek,
   previousWeek,
   round1,
   weekBoundsFor,
   type PainDot,
+  type WeekBounds,
 } from '../lib/week';
 import type { MuscleGroup, PainLevel } from '../lib/types';
 
@@ -33,10 +31,8 @@ interface MuscleRow {
 type State =
   | { status: 'loading' }
   | { status: 'no-programme' }
-  | { status: 'ready'; rows: MuscleRow[]; thisWeekVolume: number; lastWeekVolume: number; pain: PainDot[] };
+  | { status: 'ready'; rows: MuscleRow[]; volume: number; lastWeekVolume: number; pain: PainDot[] };
 
-// Display labels only — the canonical (lowercase, underscored) names live in
-// src/lib/types.ts#MUSCLE_GROUPS.
 const MUSCLE_LABELS: Record<MuscleGroup, string> = {
   quads: 'Quads',
   hamstrings: 'Hamstrings',
@@ -64,13 +60,19 @@ const PAIN_COLOR: Record<PainLevel, string> = {
   limiting: 'text-red-600',
 };
 
-// Not spec-stated: the mockup shows one over-target example
-// ("Glutes 17 / 14 ▲ +21%") but no threshold for what counts as "on
-// target" vs. under. ±10% is a reasonable, documented choice, not a
-// transcribed number.
+// Not spec-stated: ±10% is a documented UI choice, not a transcribed number.
 const ON_TARGET_BAND_PCT = 10;
 
-export default function Week() {
+export default function Coverage() {
+  const thisWeek = weekBoundsFor(localDateKey());
+  const [bounds, setBounds] = useState<WeekBounds>(thisWeek);
+  // Keyed by the week's bounds: switching weeks mounts a fresh CoverageBody
+  // whose own state starts at 'loading' naturally, rather than an effect
+  // reaching back to reset state on every bounds change.
+  return <CoverageBody key={bounds.start} bounds={bounds} thisWeek={thisWeek} onBoundsChange={setBounds} />;
+}
+
+function CoverageBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds; thisWeek: WeekBounds; onBoundsChange: (b: WeekBounds) => void }) {
   const [state, setState] = useState<State>({ status: 'loading' });
 
   useEffect(() => {
@@ -91,33 +93,26 @@ export default function Week() {
       const exercisesById = new Map(exercisesArr.map((e) => [e.id, e]));
       const morningChecksByDate = new Map(morningChecksArr.map((m) => [m.date, m]));
 
-      const bounds = weekBoundsFor(localDateKey());
       const prescribed = computePrescribedCoverage(programme.data, exercisesById);
       const actual = computeActualCoverage(loggedSets, sessionDateById, bounds, exercisesById);
-      const thisWeekVolume = computeWeeklyVolume(loggedSets, sessionDateById, bounds);
+      const volume = computeWeeklyVolume(loggedSets, sessionDateById, bounds);
       const lastWeekVolume = computeWeeklyVolume(loggedSets, sessionDateById, previousWeek(bounds));
       const pain = buildPainStrip(morningChecksByDate, datesInWeek(bounds));
 
       const muscles = new Set<MuscleGroup>([...(Object.keys(prescribed) as MuscleGroup[]), ...(Object.keys(actual) as MuscleGroup[])]);
       const rows: MuscleRow[] = Array.from(muscles)
         .map((muscle) => ({ muscle, actual: round1(actual[muscle] ?? 0), prescribed: round1(prescribed[muscle] ?? 0) }))
-        .filter((r) => r.prescribed > 0 || r.actual > 0) // a muscle nothing in the phase ever touches has nothing to show
+        .filter((r) => r.prescribed > 0 || r.actual > 0)
         .sort((a, b) => MUSCLE_LABELS[a.muscle].localeCompare(MUSCLE_LABELS[b.muscle]));
 
       if (!cancelled) {
-        setState({
-          status: 'ready',
-          rows,
-          thisWeekVolume: round1(thisWeekVolume),
-          lastWeekVolume: round1(lastWeekVolume),
-          pain,
-        });
+        setState({ status: 'ready', rows, volume: round1(volume), lastWeekVolume: round1(lastWeekVolume), pain });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [bounds]);
 
   if (state.status === 'loading') {
     return (
@@ -134,12 +129,25 @@ export default function Week() {
     );
   }
 
+  const isThisWeek = bounds.start === thisWeek.start;
+
   return (
     <main className="mx-auto max-w-md p-4">
-      {/* No week number shown — there's no PROGRAMME_START_DATE yet to know
-          which week of the phase this is (see memory.md, tied to the same
-          eventual Vault work in M9). */}
-      <h1 className="text-lg font-medium">This Week</h1>
+      <div className="flex items-center justify-between">
+        <button type="button" onClick={() => onBoundsChange(previousWeek(bounds))} className="px-2 text-slate-400" aria-label="Previous week">
+          ←
+        </button>
+        <h1 className="text-lg font-medium">{isThisWeek ? 'This Week' : `${bounds.start} – ${bounds.end}`}</h1>
+        <button
+          type="button"
+          onClick={() => onBoundsChange(nextWeek(bounds))}
+          disabled={isThisWeek}
+          className="px-2 text-slate-400 disabled:opacity-30"
+          aria-label="Next week"
+        >
+          →
+        </button>
+      </div>
 
       <table className="mt-4 w-full text-sm">
         <thead>
@@ -157,12 +165,10 @@ export default function Week() {
       </table>
 
       <p className="mt-6 text-sm text-slate-300">
-        Total volume <span className="font-medium text-white">{state.thisWeekVolume.toLocaleString()} kg</span>{' '}
-        <span className="text-slate-400">(last week: {state.lastWeekVolume.toLocaleString()})</span>
+        Total volume <span className="font-medium text-white">{state.volume.toLocaleString()} kg</span>{' '}
+        <span className="text-slate-400">(previous week: {state.lastWeekVolume.toLocaleString()})</span>
       </p>
 
-      {/* The pain strip renders directly below the load numbers, on this
-          same screen, always — never a separate tab (§A3.7, §B6.5). */}
       <div className="mt-6">
         <p className="text-sm text-slate-400">Mornings</p>
         <div className="mt-1 flex gap-2 text-xl" role="img" aria-label="This week's morning pain check-ins">

@@ -35,6 +35,16 @@ export function previousWeek(bounds: WeekBounds): WeekBounds {
   return { start: localDateKey(start), end: localDateKey(end) };
 }
 
+// UX refactor: both Coverage and Week Plan gained "navigate across weeks" —
+// the mirror image of previousWeek.
+export function nextWeek(bounds: WeekBounds): WeekBounds {
+  const start = parseDateKey(bounds.start);
+  start.setDate(start.getDate() + 7);
+  const end = parseDateKey(bounds.end);
+  end.setDate(end.getDate() + 7);
+  return { start: localDateKey(start), end: localDateKey(end) };
+}
+
 // The 7 dates Mon..Sun in `bounds`, for the pain strip.
 export function datesInWeek(bounds: WeekBounds): string[] {
   const start = parseDateKey(bounds.start);
@@ -115,4 +125,35 @@ export function buildPainStrip(morningChecks: Map<string, MorningCheck>, dates: 
 // Matches §B4's own `ROUND(SUM(em.weight), 1)` — one decimal place.
 export function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+// --- Week Plan (UX refactor): green/yellow/red per day, Mon..Sat ---
+//
+// "3 of 3 done" per day, day-appropriate: a lifting day's 3 are the session,
+// protein, and steps; a cardio/mobility day's 3 are cardio+mobility (one
+// combined item — Today itself presents them as one day's activity),
+// protein, and steps; a rest day has no main-activity item at all (2 of 2).
+// Pure — the caller (WeekPlan.tsx) resolves each boolean from Dexie first,
+// keeping the grading rule itself trivially testable.
+export type DayKind = 'lifting' | 'cardio_mobility' | 'rest';
+export type DayColor = 'green' | 'yellow' | 'red';
+
+export interface DayCompletion {
+  date: string;
+  kind: DayKind;
+  done: number;
+  total: number;
+  color: DayColor;
+}
+
+export function computeDayCompletion(
+  date: string,
+  kind: DayKind,
+  signals: { mainActivityDone: boolean; proteinHit: boolean; stepsLogged: boolean },
+): DayCompletion {
+  const items = kind === 'rest' ? [signals.proteinHit, signals.stepsLogged] : [signals.mainActivityDone, signals.proteinHit, signals.stepsLogged];
+  const total = items.length;
+  const done = items.filter(Boolean).length;
+  const color: DayColor = done >= total ? 'green' : done > 0 ? 'yellow' : 'red';
+  return { date, kind, done, total, color };
 }

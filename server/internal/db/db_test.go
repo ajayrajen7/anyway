@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/ajayrajen7/anyway/server/internal/db"
@@ -30,8 +31,8 @@ func TestOpenAppliesMigrations(t *testing.T) {
 
 	tables := []string{
 		"exercises", "exercise_muscles", "phases", "day_templates", "slots",
-		"slot_swaps", "sessions", "logged_sets", "morning_checks", "weigh_ins",
-		"protein_logs", "mobility_logs", "cardio_logs", "outbox", "settings",
+		"slot_swaps", "sessions", "logged_sets", "morning_checks",
+		"protein_logs", "mobility_logs", "cardio_logs", "steps_logs", "outbox", "settings",
 	}
 	for _, table := range tables {
 		var name string
@@ -41,6 +42,23 @@ func TestOpenAppliesMigrations(t *testing.T) {
 		if err != nil {
 			t.Errorf("table %s not created: %v", table, err)
 		}
+	}
+}
+
+// TestOpenDropsWeighIns confirms 0005_drop_weigh_ins.sql actually removes
+// the table (the Vault/weigh-in feature was dropped entirely — see
+// memory.md), not just that it's absent from the list migrate() creates.
+func TestOpenDropsWeighIns(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+
+	var name string
+	err = conn.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='weigh_ins'`).Scan(&name)
+	if err != sql.ErrNoRows {
+		t.Fatalf("expected weigh_ins to not exist, got name=%q err=%v", name, err)
 	}
 }
 

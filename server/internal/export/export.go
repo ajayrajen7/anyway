@@ -1,15 +1,9 @@
 // Package export implements GET /api/export (docs/architecture.md §B5) —
 // a full JSON dump of every table, for the user's own portability/backup
 // use (distinct from server/internal/backup's nightly on-disk `VACUUM INTO`
-// snapshot, which nothing downloads).
-//
-// One deliberate exception to "full": `weigh_ins` is included only once the
-// Vault has unlocked (see server/internal/settings#VaultUnlocked), same as
-// GET /api/weigh-ins. prd.md §A4 says "enforce server-side, not just in the
-// UI" — a raw JSON export is exactly the kind of alternate route that would
-// otherwise let the app's own UI restraint be trivially bypassed by just
-// opening this URL, so the same gate applies here. Every other table is
-// dumped unconditionally.
+// snapshot, which nothing downloads). Every table is dumped unconditionally
+// — the old `weigh_ins`-only Vault gate was removed along with the Vault
+// feature itself in the UX refactor; see memory.md.
 package export
 
 import (
@@ -17,8 +11,6 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
-
-	"github.com/ajayrajen7/anyway/server/internal/settings"
 )
 
 // tables is the fixed, whitelisted set of tables dumped — never derived
@@ -27,25 +19,18 @@ import (
 var tables = []string{
 	"exercises", "exercise_muscles", "phases", "day_templates", "slots",
 	"slot_swaps", "sessions", "logged_sets", "morning_checks",
-	"protein_logs", "mobility_logs", "cardio_logs", "outbox", "settings",
+	"protein_logs", "mobility_logs", "cardio_logs", "steps_logs", "outbox", "settings",
 }
 
 type Dump struct {
 	GeneratedAt string                      `json:"generated_at"`
-	VaultLocked bool                        `json:"vault_locked"`
 	Tables      map[string][]map[string]any `json:"tables"`
 }
 
 func Build(ctx context.Context, conn *sql.DB, now time.Time) (*Dump, error) {
-	unlocked, err := settings.VaultUnlocked(ctx, conn, now)
-	if err != nil {
-		return nil, fmt.Errorf("check vault: %w", err)
-	}
-
 	dump := &Dump{
 		GeneratedAt: now.UTC().Format(time.RFC3339),
-		VaultLocked: !unlocked,
-		Tables:      make(map[string][]map[string]any, len(tables)+1),
+		Tables:      make(map[string][]map[string]any, len(tables)),
 	}
 
 	for _, table := range tables {
@@ -54,19 +39,6 @@ func Build(ctx context.Context, conn *sql.DB, now time.Time) (*Dump, error) {
 			return nil, fmt.Errorf("dump %s: %w", table, err)
 		}
 		dump.Tables[table] = rows
-	}
-
-	// weigh_ins: only while unlocked. Locked, it's present as an empty list
-	// rather than an absent key — a caller can tell "no data yet" apart
-	// from "you can't see this yet" without guessing from a missing key.
-	if unlocked {
-		rows, err := dumpTable(ctx, conn, "weigh_ins")
-		if err != nil {
-			return nil, fmt.Errorf("dump weigh_ins: %w", err)
-		}
-		dump.Tables["weigh_ins"] = rows
-	} else {
-		dump.Tables["weigh_ins"] = []map[string]any{}
 	}
 
 	return dump, nil

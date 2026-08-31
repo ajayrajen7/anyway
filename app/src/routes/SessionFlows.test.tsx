@@ -1,14 +1,15 @@
-// Integration tests for the M5 swap/add-exercise flows — these need the
-// real nested routing (SwapSheet/AddExercise render via SessionRunner's
-// <Outlet/>, reading it via useOutletContext), so they render the same
-// route tree App.tsx does rather than SwapSheet/AddExercise in isolation.
+// Integration tests for the swap/add-exercise flows against the UX
+// refactor's route tree — Add nests under SessionOverview (the list),
+// Swap nests under SessionExercise (the single-exercise screen), each
+// reading their outlet context via useOutletContext. See App.tsx.
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 import AddExercise from './AddExercise';
 import { db } from '../lib/db';
-import SessionRunner from './SessionRunner';
+import SessionExercise from './SessionExercise';
+import SessionOverview from './SessionOverview';
 import SwapSheet from './SwapSheet';
 import type { CachedToday, Exercise, TodaySlot } from '../lib/types';
 
@@ -40,29 +41,22 @@ async function seedCache(slots: TodaySlot[], sessionId = 42) {
 
 function fullExercise(overrides: Partial<Exercise> = {}): Exercise {
   return {
-    id: 1,
-    slug: 'x',
-    name: 'X',
-    equipment: 'dumbbell',
-    pressure: 'low',
-    impact: 'none',
-    unilateral: false,
-    increment_kg: 2.5,
-    blocked: false,
-    block_reason: null,
-    caution: null,
+    id: 1, slug: 'x', name: 'X', equipment: 'dumbbell', pressure: 'low', impact: 'none',
+    unilateral: false, increment_kg: 2.5, blocked: false, block_reason: null, caution: null,
     muscles: {},
     ...overrides,
   };
 }
 
-function renderRunner(sessionId = 42) {
+function renderApp(initialPath: string) {
   return render(
-    <MemoryRouter initialEntries={[`/session/${sessionId}`]}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
-        <Route path="/session/:id" element={<SessionRunner />}>
-          <Route path="swap/:slotId" element={<SwapSheet />} />
+        <Route path="/session/:id" element={<SessionOverview />}>
           <Route path="add" element={<AddExercise />} />
+        </Route>
+        <Route path="/session/:id/exercise/:key" element={<SessionExercise />}>
+          <Route path="swap/:slotId" element={<SwapSheet />} />
         </Route>
         <Route path="/session/:id/done" element={<div>Session summary screen</div>} />
       </Routes>
@@ -78,17 +72,16 @@ afterEach(async () => {
   await db.exercises.clear();
 });
 
-describe('Swap flow', () => {
+describe('Swap flow (from the single-exercise screen)', () => {
   it('picking a tier-1 option replaces the active exercise, and the next logged set uses provenance=swap_in_list', async () => {
     const user = userEvent.setup();
     await seedCache([makeSlot()]);
-    renderRunner();
+    renderApp('/session/42/exercise/slot-100');
 
     await user.click(await screen.findByRole('link', { name: 'Swap' }));
     await screen.findByText(/Instead of LEG PRESS/i);
     await user.click(screen.getByRole('button', { name: 'Single-leg leg press' }));
 
-    // Back on the runner, showing the swapped-in exercise.
     await screen.findByText('Single-leg leg press');
     await user.click(await screen.findByRole('button', { name: 'Log set 1' }));
 
@@ -100,7 +93,7 @@ describe('Swap flow', () => {
     const user = userEvent.setup();
     await seedCache([makeSlot()]);
     await db.exercises.bulkPut([fullExercise({ id: 30, name: 'Goblet squat' })]);
-    renderRunner();
+    renderApp('/session/42/exercise/slot-100');
 
     await user.click(await screen.findByRole('link', { name: 'Swap' }));
     await user.type(await screen.findByLabelText('Search exercises'), 'goblet');
@@ -117,7 +110,7 @@ describe('Swap flow', () => {
     const user = userEvent.setup();
     await seedCache([makeSlot()]);
     await db.exercises.bulkPut([fullExercise({ id: 40, name: 'Running', blocked: true, block_reason: 'Impact — knee and Achilles' })]);
-    renderRunner();
+    renderApp('/session/42/exercise/slot-100');
 
     await user.click(await screen.findByRole('link', { name: 'Swap' }));
     await user.type(await screen.findByLabelText('Search exercises'), 'run');
@@ -125,20 +118,29 @@ describe('Swap flow', () => {
     await screen.findByText(/Impact — knee and Achilles/);
     expect(screen.queryByRole('button', { name: 'Running' })).not.toBeInTheDocument();
   });
+
+  it('swap is also reachable directly from the exercise list, landing on the exercise with the sheet open', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot()]);
+    renderApp('/session/42');
+
+    await user.click(await screen.findByRole('button', { name: 'Swap Leg press' }));
+
+    await screen.findByText(/Instead of LEG PRESS/i);
+  });
 });
 
-describe('Add-exercise flow', () => {
+describe('Add-exercise flow (from the exercise list)', () => {
   it('is not added until an attribution is chosen, then records provenance=added with added_by set', async () => {
     const user = userEvent.setup();
     await seedCache([makeSlot()]);
     await db.exercises.bulkPut([fullExercise({ id: 50, name: 'Dumbbell curl' })]);
-    renderRunner();
+    renderApp('/session/42');
 
-    await user.click(await screen.findByRole('link', { name: 'Add exercise' }));
+    await user.click(await screen.findByRole('link', { name: '+ Add exercise' }));
     await user.type(await screen.findByLabelText('Search exercises'), 'curl');
     await user.click(await screen.findByRole('button', { name: 'Dumbbell curl' }));
 
-    // Mandatory attribution step — not added yet.
     await screen.findByText('Whose call?');
     expect(await db.sessionOverlay.get(42)).toBeUndefined();
 
@@ -149,11 +151,9 @@ describe('Add-exercise flow', () => {
       expect(overlay?.added).toHaveLength(1);
     });
 
-    // The runner now shows 2 exercises, and moving to the added one logs
-    // with the right provenance/attribution.
-    await screen.findByText('Exercise 1 of 2');
-    await user.click(screen.getByRole('button', { name: 'Next →' }));
-    await screen.findByText('Dumbbell curl');
+    // Back on the list, now showing 2 exercises including the added one.
+    await screen.findByText('2 exercises');
+    await user.click(screen.getByText('Dumbbell curl'));
     await user.click(await screen.findByRole('button', { name: 'Log set 1' }));
 
     const stored = await db.loggedSets.where({ exercise_id: 50 }).toArray();
@@ -164,9 +164,9 @@ describe('Add-exercise flow', () => {
     const user = userEvent.setup();
     await seedCache([makeSlot()]);
     await db.exercises.bulkPut([fullExercise({ id: 50, name: 'Dumbbell curl' })]);
-    renderRunner();
+    renderApp('/session/42');
 
-    await user.click(await screen.findByRole('link', { name: 'Add exercise' }));
+    await user.click(await screen.findByRole('link', { name: '+ Add exercise' }));
     await user.type(await screen.findByLabelText('Search exercises'), 'curl');
     await user.click(await screen.findByRole('button', { name: 'Dumbbell curl' }));
     await screen.findByText('Whose call?');
@@ -175,5 +175,23 @@ describe('Add-exercise flow', () => {
 
     await screen.findByLabelText('Search exercises');
     expect(await db.sessionOverlay.get(42)).toBeUndefined();
+  });
+});
+
+describe('Delete flow (from the exercise list)', () => {
+  it('a deleted exercise never appears again, even after navigating away and back', async () => {
+    const user = userEvent.setup();
+    await seedCache([
+      makeSlot({ id: 100, exercise: { id: 10, slug: 'a', name: 'Exercise A', unilateral: false, increment_kg: 2.5 } }),
+      makeSlot({ id: 101, exercise: { id: 11, slug: 'b', name: 'Exercise B', unilateral: false, increment_kg: 2.5 }, position: 2 }),
+    ]);
+    renderApp('/session/42');
+    await screen.findByText('Exercise A');
+
+    await user.click(screen.getByRole('button', { name: 'Delete Exercise A' }));
+    await waitFor(() => expect(screen.queryByText('Exercise A')).not.toBeInTheDocument());
+
+    const overlay = await db.sessionOverlay.get(42);
+    expect(overlay?.removed).toEqual(['slot-100']);
   });
 });

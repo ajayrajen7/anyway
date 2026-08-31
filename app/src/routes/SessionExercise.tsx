@@ -1,25 +1,24 @@
-// A3.3 Session Runner (`/session/:id`) — the core screen. One exercise at a
-// time.
+// UX refactor: one exercise, full screen (`/session/:id/exercise/:key`) —
+// reached from SessionOverview's list, not stepped through sequentially.
+// "Next" still advances to the next exercise in list order for a quick
+// consecutive flow, but there's always a way back to the list to jump
+// anywhere else (browser/back nav) — this screen no longer owns "which
+// exercise am I on", the URL does.
 //
 // HARD RULE (B6.1, amended M5): no <input type="number"> or any focusable
-// text field anywhere in *this* screen (the set-logging exercise panel).
-// Steppers only — enforced by a test in SessionRunner.test.tsx. There is in
-// fact no <input> element at all below: every value is a <span> toggled
-// into a −/+ stepper of <button>s. The nested Swap/Add sheets (rendered via
-// <Outlet/>) are a documented exception with their own search inputs — see
-// docs/architecture.md §B6.1's amendment.
+// text field anywhere in *this* screen. Steppers only — enforced by a test.
+// The nested Swap sheet (rendered via <Outlet/>) is a documented exception
+// with its own search input — see docs/architecture.md §B6.1's amendment.
 //
-// Offline-first (B2): this screen reads exclusively from the Dexie cache
-// written by Today.tsx (getCachedToday) plus the per-session overlay
-// (swaps/additions, M5) and already-logged sets — it never calls the API.
-// Every mutation goes through logSet, which writes loggedSets + outbox
-// together.
+// Offline-first (B2): reads exclusively from the Dexie cache written by
+// Today.tsx (getCachedToday) plus the per-session overlay (M5) and
+// already-logged sets — never calls the API.
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { getCachedToday } from '../lib/todayCache';
 import { getOverlay } from '../lib/overlay';
 import { loggedSetsFor, logSet } from '../lib/outbox';
-import { buildRunnerSlots, clampNonNegative, isSwipeLeft, prefillFor, type RunnerSlot } from '../lib/session';
+import { buildRunnerSlots, clampNonNegative, isSwipeLeft, prefillFor, type RunnerOutletContext, type RunnerSlot } from '../lib/session';
 import type { CachedToday, LoggedSet, SessionOverlay } from '../lib/types';
 
 type RowStatus = 'pending' | 'done' | 'skipped';
@@ -30,15 +29,6 @@ interface RowState {
   editing: 'weight' | 'reps' | null;
 }
 
-// What the nested Swap/Add sheets read via useOutletContext — everything
-// they need to act, without re-fetching what SessionRunner already has.
-export interface RunnerOutletContext {
-  sessionId: number;
-  data: CachedToday['data'];
-  currentSlot: RunnerSlot | undefined; // the exercise being viewed when the sheet was opened
-  onOverlayChange: () => void; // call after writing to sessionOverlay, before navigating back
-}
-
 function rowFromExisting(existing: LoggedSet | undefined, slot: RunnerSlot): RowState {
   if (existing) {
     return { status: existing.status, loadKg: existing.load_kg, reps: existing.reps ?? 0, editing: null };
@@ -47,14 +37,13 @@ function rowFromExisting(existing: LoggedSet | undefined, slot: RunnerSlot): Row
   return { status: 'pending', loadKg: prefill.loadKg, reps: prefill.reps, editing: null };
 }
 
-export default function SessionRunner() {
-  const { id } = useParams<{ id: string }>();
+export default function SessionExercise() {
+  const { id, key } = useParams<{ id: string; key: string }>();
   const sessionId = Number(id);
   const navigate = useNavigate();
 
-  const [cached, setCached] = useState<CachedToday | null | undefined>(undefined); // undefined = loading
+  const [cached, setCached] = useState<CachedToday | null | undefined>(undefined);
   const [overlay, setOverlay] = useState<SessionOverlay | undefined>(undefined);
-  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,18 +60,6 @@ export default function SessionRunner() {
   }
   useEffect(refreshOverlay, [sessionId]);
 
-  const slots = cached && overlay ? buildRunnerSlots(cached.data, overlay) : [];
-  const slot = slots[currentIndex];
-  const isLastExercise = currentIndex >= slots.length - 1;
-
-  function advance() {
-    if (isLastExercise) {
-      navigate(`/session/${sessionId}/done`);
-    } else {
-      setCurrentIndex((i) => i + 1);
-    }
-  }
-
   if (cached === undefined || overlay === undefined) {
     return (
       <main className="mx-auto max-w-md p-4">
@@ -90,7 +67,7 @@ export default function SessionRunner() {
       </main>
     );
   }
-  if (cached === null || !slot) {
+  if (cached === null) {
     return (
       <main className="mx-auto max-w-md p-4">
         <p className="text-sm text-slate-400">
@@ -100,30 +77,62 @@ export default function SessionRunner() {
     );
   }
 
+  const slots = buildRunnerSlots(cached.data, overlay);
+  const index = slots.findIndex((s) => s.key === key);
+  const slot = slots[index];
+
+  if (!slot) {
+    return (
+      <main className="mx-auto max-w-md p-4">
+        <p className="text-sm text-slate-400">Exercise not found — it may have been deleted from this session.</p>
+      </main>
+    );
+  }
+
+  function goToList() {
+    navigate(`/session/${sessionId}`);
+  }
+
+  function advance() {
+    const next = slots[index + 1];
+    if (next) {
+      navigate(`/session/${sessionId}/exercise/${next.key}`);
+    } else {
+      goToList();
+    }
+  }
+
   return (
     <main className="mx-auto max-w-md p-4">
       <div className="flex items-center justify-between">
+        <button type="button" onClick={goToList} className="text-sm text-slate-400" aria-label="Back to exercise list">
+          ← Exercises
+        </button>
         <p className="text-sm text-slate-400">
-          Exercise {currentIndex + 1} of {slots.length}
+          {index + 1} of {slots.length}
         </p>
-        <Link to="add" aria-label="Add exercise" className="px-2 text-xl">
-          ⋯
-        </Link>
       </div>
 
       {/* Keyed by slot.key: switching exercises (or swapping the current
-          one) mounts a fresh panel with its own rows/rest-timer state,
-          rather than an effect resetting state in place — the state a
-          "new" exercise starts with is exactly its reconstructed-from-Dexie
-          initial state, nothing to "reset". */}
-      <ExercisePanel key={slot.key} sessionId={sessionId} slot={slot} onAdvance={advance} />
+          one) mounts a fresh panel with its own rows/rest-timer state. */}
+      <ExercisePanel key={slot.key} sessionId={sessionId} slot={slot} isLast={index >= slots.length - 1} onAdvance={advance} />
 
       <Outlet context={{ sessionId, data: cached.data, currentSlot: slot, onOverlayChange: refreshOverlay } satisfies RunnerOutletContext} />
     </main>
   );
 }
 
-function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot: RunnerSlot; onAdvance: () => void }) {
+function ExercisePanel({
+  sessionId,
+  slot,
+  isLast,
+  onAdvance,
+}: {
+  sessionId: number;
+  slot: RunnerSlot;
+  isLast: boolean;
+  onAdvance: () => void;
+}) {
   const [rows, setRows] = useState<RowState[]>([]);
   const [rowsReady, setRowsReady] = useState(false);
   const [restSince, setRestSince] = useState<string | null>(null);
@@ -149,9 +158,7 @@ function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot
 
   async function commitRow(rowIndex: number, status: 'done' | 'skipped') {
     const row = rows[rowIndex];
-    const logged = status === 'done'
-      ? { loadKg: row.loadKg, reps: row.reps }
-      : { loadKg: null, reps: null };
+    const logged = status === 'done' ? { loadKg: row.loadKg, reps: row.reps } : { loadKg: null, reps: null };
     await logSet({
       sessionId,
       slotId: slot.slotId,
@@ -168,9 +175,7 @@ function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot
   }
 
   async function skipExercise() {
-    await Promise.all(
-      rows.map((r, i) => (r.status === 'pending' ? commitRow(i, 'skipped') : Promise.resolve())),
-    );
+    await Promise.all(rows.map((r, i) => (r.status === 'pending' ? commitRow(i, 'skipped') : Promise.resolve())));
     onAdvance();
   }
 
@@ -226,7 +231,7 @@ function ExercisePanel({ sessionId, slot, onAdvance }: { sessionId: number; slot
           Skip
         </button>
         <button type="button" onClick={onAdvance} disabled={!rowsReady} className="flex-1 rounded-md bg-emerald-600 py-3 disabled:opacity-50">
-          Next →
+          {isLast ? '← List' : 'Next →'}
         </button>
       </div>
     </>
@@ -242,7 +247,6 @@ function RestTimer({ since }: { since: string }) {
   const elapsedSec = Math.max(0, Math.floor((now - new Date(since).getTime()) / 1000));
   const mm = Math.floor(elapsedSec / 60);
   const ss = String(elapsedSec % 60).padStart(2, '0');
-  // Passive display only (B6.4) — never a modal, never blocks a tap.
   return (
     <p aria-live="polite" className="mt-2 text-xs text-slate-500">
       Rest: {mm}:{ss}

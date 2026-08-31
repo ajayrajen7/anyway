@@ -12,28 +12,37 @@ A prescription-and-logging app for one user following a fixed 6-month training p
 2. **Logging happens mid-session, one-handed, with a trainer waiting.** Any interaction costing more than ~2 seconds will be abandoned within three weeks.
 3. **The user has previously quit a tracking app because outcome numbers demotivated him.** Outcome data is collected and deliberately withheld.
 
-## A2. The four user actions (everything else is support)
+## A2. The user actions (everything else is support)
+
+> **UX refactor (post-M10, see memory.md):** weight tracking and the Vault
+> were dropped entirely — the owner does not want to track weight, full
+> stop. This table and the sections below reflect that.
 
 | When | Action | Interaction budget |
 |---|---|---|
 | Morning | Log pain level | 1 tap |
-| Sunday morning only | Log weight | 1 stepper + 1 tap, value hidden on save |
 | Gym | Follow or edit today's session, log actual sets | ~1 tap per set |
+| Any time | Log steps | stepper |
 | Evening | Log protein hit y/n | 1 tap |
-| Any time | View this week's muscle-group coverage | navigate |
+| Any time | View this week's muscle-group coverage or the week's plan | tab switch |
 
 ## A3. Screens
 
+A persistent bottom nav (Today / Coverage / Week Plan) wraps the three
+"browse any time" screens. Everything else is a full-screen flow entered
+and left, not a tab.
+
 | Route | Screen | Purpose |
 |---|---|---|
-| `/` | Today | Today's session card, mobility checkbox, protein row (evening only) |
+| `/` | Today | Today's session card, mobility checkbox, steps, protein row (evening only) |
+| `/coverage` | Coverage | Muscle-group coverage actual vs prescribed + pain strip, navigable across weeks |
+| `/week` | Week Plan | Monday–Saturday, each day graded green/yellow/red, navigable across weeks |
 | `/check` | Morning Check | Full-screen, 4 buttons, closes on tap |
-| `/weigh` | Weigh-in | Sundays only, blind entry |
-| `/session/:id` | Session Runner | One exercise at a time, set logging |
-| `/session/:id/swap/:slotId` | Swap sheet | Approved swaps, then search |
+| `/session/:id` | Exercise list | Every exercise in today's session; start from any of them, swap or delete any of them |
+| `/session/:id/exercise/:key` | Exercise screen | One exercise, full screen, set logging |
+| `/session/:id/exercise/:key/swap/:slotId` | Swap sheet | Approved swaps, then search |
 | `/session/:id/add` | Add exercise | Search + trainer/me attribution |
 | `/session/:id/done` | Session summary | Counts, volume, optional note |
-| `/week` | Week View | Muscle-group coverage actual vs prescribed + pain strip |
 | `/settings` | Settings | Programme phase, seed reset, export |
 
 ### A3.1 Morning Check (`/check`)
@@ -49,30 +58,54 @@ On tap: persist, close the PWA window. Do **not** route to `/`.
 
 - No history, streak, graph, or encouragement text on this screen. Ever.
 - One silent re-notify at 11:00. If still unanswered by 23:59, store nothing. **An unlogged day must remain absent from the table — never default to `none`.**
-- Weight is **not** on this screen. Bundling them means a skipped weigh-in takes the pain log with it.
 
 ### A3.2 Today (`/`)
 
-Above the fold, one card:
+Above the fold, one card, headed by the **weekday name** — never the phase's
+own day-template name ("Lower A"/"Lower B"). The owner thinks in weekdays
+day to day, not phase-day labels:
 
 ```
-Thursday — Lower B
+Thursday
 7 exercises · ~55 min
 [ Start session ]
 ```
 
-Below: `Mobility (10 min)` checkbox. After 18:00, a `Protein — hit 120g?` row with `Yes` / `No`.
+Below: `Mobility (10 min)` checkbox, a `Steps` stepper (manual count, any
+time of day). After 18:00, a `Protein — hit 120g?` row with `Yes` / `No`.
 
-**Wed/Sat** show `Mobility + Cardio` and route to the light flow (A3.6).
+**Wed/Sat** show the weekday name and route to the light flow (A3.6).
 
 **Missed days do not reschedule.** If Thursday's session is never started, it is marked `missed` at midnight and Friday still shows Friday's template. Do not build rescheduling — comparability across weeks is the product.
 
-### A3.3 Session Runner (`/session/:id`)
+### A3.3 Exercise list (`/session/:id`)
 
-One exercise per screen.
+The session's landing screen — every exercise in today's session, in
+prescribed order, each showing its prescription and status (pending / in
+progress / done):
 
 ```
-Exercise 1 of 7                          [ ⋯ ]
+LOWER B                                    7 exercises
+
+[ Start ]
+
+  Hip thrust        3 × 12          [swap] [delete]
+  Leg press         3 × 10   done   [swap] [delete]
+  ...
+
+[ + Add exercise ]      [ Finish session → ]
+```
+
+- **Start from any exercise** — tapping a row opens it directly at A3.3.1. `Start` opens the first not-yet-done exercise.
+- **Swap or delete any exercise**, right from this list, not just the one currently open. Delete removes the exercise from *this session's* list entirely (no sets ever logged against it) — session-local, like a swap, never edits the programme itself.
+- `Finish session` is an explicit action here, not an automatic consequence of reaching the last exercise on A3.3.1.
+
+#### A3.3.1 Exercise screen (`/session/:id/exercise/:key`)
+
+One exercise, full screen, reached from the list above:
+
+```
+1 of 7                                   [ ← Exercises ]
 
 HIP THRUST
 Prescribed: 3 × 12 @ 20 kg
@@ -92,10 +125,11 @@ Interactions:
 - **Tap the weight number** → inline `− 20 kg +` stepper replaces the label. Increment from `exercises.default_increment_kg` (2.5 kg dumbbells/barbell, 5 kg leg press, 1 kg for band/bodyweight-adjacent). Tap ✓ to commit. **≤3 taps.**
 - **Tap the reps number** → same pattern, ±1.
 - **Swipe row left** → skipped. No reason prompt in v1.
+- **Next** advances to the next exercise in list order; on the last exercise it returns to the list instead — finishing the session is the list's own explicit action (A3.3).
 
 **Hard rule: no keyboard is reachable from this screen.** No RPE, no per-set notes, no form rating.
 
-### A3.4 Swap (`/session/:id/swap/:slotId`)
+### A3.4 Swap (`/session/:id/exercise/:key/swap/:slotId`)
 
 Bottom sheet, two tiers:
 
@@ -137,12 +171,15 @@ WEDNESDAY — Mobility + Cardio
 
 `View` expands a checklist of mobility items; individual ticks optional. Three taps to close the day.
 
-### A3.7 Week View (`/week`)
+### A3.7 Coverage (`/coverage`)
 
-The only non-capture screen in v1. It exists so the pain signal is never read in isolation.
+**UX refactor:** this used to be one screen ("Week View") that also carried
+the Mon–Sat plan below it; the two are now separate bottom-nav tabs. This
+tab is the muscle-load half — coverage numbers and the pain strip, still on
+one screen together, still never split into further tabs of their own:
 
 ```
-WEEK 6
+◀  THIS WEEK  ▶
 
 Sets by muscle group          actual / prescribed
 Quads              14 / 14    ●
@@ -153,27 +190,52 @@ Chest              11 / 11    ●
 Lats               15 / 15    ●
 ...
 
-Total volume       18,400 kg   (last week: 17,900)
+Total volume       18,400 kg   (previous week: 17,900)
 
 Mornings   ● ● ○ ● ● ● ●
 ```
 
 Rules:
-- **Descriptive only.** This week's counts, last week's single volume figure, this week's seven pain dots.
+- **Descriptive only.** The selected week's counts, the previous week's single volume figure, the selected week's seven pain dots.
 - **No correlation, no trend lines, no multi-week charts, no generated insight text.**
-- The pain strip must render on the same screen as the load numbers, always, directly below them. Do not make it a separate tab.
+- The pain strip must render on the same screen as the load numbers, always, directly below them.
 - `actual` sums `exercise_muscles.weight` over completed sets. `prescribed` sums the same over the day templates for that week.
+- **Navigable across weeks** (◀ previous / ▶ next, capped at the current week) — the one respect in which this isn't just "this week," per the owner's explicit ask.
 
-## A4. The Vault
+### A3.8 Week Plan (`/week`)
 
-`PROGRAMME_START_DATE` is set once at seed time. Until `start + 84 days`:
+**New in the UX refactor.** Monday through Saturday (Sunday, a rest day, is
+not shown here — Coverage's pain strip still covers all 7 days), each day
+graded by how many of its 3 expected actions are done:
 
-- `GET /api/weigh-ins` returns **423 Locked**
-- No weight value is rendered anywhere in the UI, including immediately after entry
-- No pain aggregation beyond the current 7 days
-- No session-composition-to-pain analysis exists in the codebase at all
+```
+◀  THIS WEEK  ▶
 
-Enforce server-side, not just in the UI. On day 84 the Today screen shows one dismissible card: *"12 weeks of data is now available. Open it?"*
+● Monday      3 of 3
+● Tuesday     2 of 3
+○ Wednesday   0 of 2
+...
+
+View coverage →
+```
+
+- **Green** = all 3 done, **yellow** = 1–2 of 3, **red** = none.
+- The "3" is day-appropriate: a lifting day's are the session, protein, and steps; a cardio/mobility day's are cardio+mobility (one combined item), protein, and steps.
+- **Navigable across weeks**, same as Coverage.
+- Descriptive only, same restraint as A3.7 — no streaks, no badges, no "you're on a 4-week streak" copy.
+
+## A4. Weight tracking / "the Vault" — removed
+
+This section originally specified a weigh-in flow and an 84-day server-side
+lock on ever seeing that data ("the Vault"), in service of constraint #3 in
+`vision.md` (outcome data collected and withheld to avoid demotivation).
+
+**Removed entirely in the UX refactor** (post-M10, see `memory.md`): the
+owner does not want weight tracked at all, full stop — not logged, not
+locked, not revealed later. There is no weigh-in screen, no `weigh_ins`
+table, no Vault gate anywhere in the codebase. Section numbering below (A5,
+A6) is left as-is rather than renumbered, since those numbers are referenced
+throughout `architecture.md`, `memory.md`, and code comments.
 
 ## A5. Exercise Library
 

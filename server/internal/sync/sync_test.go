@@ -140,18 +140,19 @@ func TestCardioReplacesRatherThanAccumulates(t *testing.T) {
 	}
 }
 
-func TestWeighInWriteAlwaysAllowedAndUpserts(t *testing.T) {
+func TestStepsUpserts(t *testing.T) {
 	conn := openTestDB(t)
 	ctx := t.Context()
-	if err := syncpkg.WeighIn(ctx, conn, syncpkg.WeighInPayload{Date: "2026-01-04", WeightKg: 82.5}); err != nil {
-		t.Fatalf("WeighIn: %v", err)
+	if err := syncpkg.Steps(ctx, conn, syncpkg.StepsPayload{Date: "2026-01-04", Steps: 6000}); err != nil {
+		t.Fatalf("first Steps: %v", err)
 	}
-	rows, err := syncpkg.ListWeighIns(ctx, conn)
-	if err != nil {
-		t.Fatalf("ListWeighIns: %v", err)
+	if err := syncpkg.Steps(ctx, conn, syncpkg.StepsPayload{Date: "2026-01-04", Steps: 8200}); err != nil {
+		t.Fatalf("second Steps: %v", err)
 	}
-	if len(rows) != 1 || rows[0].WeightKg != 82.5 {
-		t.Fatalf("expected one 82.5kg row, got %+v", rows)
+	var count, steps int
+	conn.QueryRow(`SELECT COUNT(*), MAX(steps) FROM steps_logs WHERE date = ?`, "2026-01-04").Scan(&count, &steps)
+	if count != 1 || steps != 8200 {
+		t.Fatalf("expected exactly 1 row at 8200 steps, got count=%d steps=%d", count, steps)
 	}
 }
 

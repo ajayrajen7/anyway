@@ -83,6 +83,13 @@ export const CardioLog = z.object({
 });
 export type CardioLog = z.infer<typeof CardioLog>;
 
+// A real daily count, like protein — not presence-only like mobility.
+export const StepsLog = z.object({
+  date: z.string(),
+  steps: z.number(),
+});
+export type StepsLog = z.infer<typeof StepsLog>;
+
 // --- GET /api/today (docs/architecture.md §B5, M3) ---
 
 export const ExerciseRef = z.object({
@@ -213,23 +220,18 @@ export const SwapOverride = z.object({
 export type SwapOverride = z.infer<typeof SwapOverride>;
 
 // Local, session-scoped record of everything that changed from the original
-// prescription — swaps and additions. `todayCache.data` + `SessionOverlay`
+// prescription — swaps, additions, and deletions (UX refactor: "delete an
+// exercise from today's session" — session-local, never synced, same as
+// swaps/additions; see memory.md). `todayCache.data` + `SessionOverlay`
 // together are "what this session actually is"; see
 // src/lib/session.ts#buildRunnerSlots.
 export const SessionOverlay = z.object({
   sessionId: z.number(),
   swaps: z.record(z.string(), SwapOverride), // keyed by TodaySlot.id.toString()
   added: z.array(AddedSlot),
+  removed: z.array(z.string()).default([]), // RunnerSlot.key values deleted from this session's list
 });
 export type SessionOverlay = z.infer<typeof SessionOverlay>;
-
-// --- Weigh-in (prd.md §A4, "the Vault") — M9 ---
-
-export const WeighIn = z.object({
-  date: z.string(),
-  weight_kg: z.number(),
-});
-export type WeighIn = z.infer<typeof WeighIn>;
 
 // --- POST /api/sync (docs/architecture.md §B5, M9) ---
 

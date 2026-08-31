@@ -10,7 +10,6 @@ import (
 	"github.com/ajayrajen7/anyway/server/internal/api"
 	"github.com/ajayrajen7/anyway/server/internal/db"
 	"github.com/ajayrajen7/anyway/server/internal/seed"
-	"github.com/ajayrajen7/anyway/server/internal/settings"
 	syncpkg "github.com/ajayrajen7/anyway/server/internal/sync"
 )
 
@@ -215,7 +214,7 @@ func TestPostLogSetUsesPathIDAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestWeighInsWriteAlwaysAllowedReadGatedByVault(t *testing.T) {
+func TestPostStepsWrites(t *testing.T) {
 	conn, err := db.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -223,38 +222,14 @@ func TestWeighInsWriteAlwaysAllowedReadGatedByVault(t *testing.T) {
 	defer conn.Close()
 	router := api.NewRouter(conn, "secret")
 
-	// Write is allowed even with no programme_start_date recorded at all.
-	rec := doJSON(t, router, http.MethodPost, "/api/weigh-ins", map[string]any{"date": "2026-01-04", "weight_kg": 82.5})
+	rec := doJSON(t, router, http.MethodPost, "/api/steps", map[string]any{"date": "2026-01-04", "steps": 7500})
 	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected write to succeed regardless of vault state, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
-
-	// Read is 423 with no start date set (conservative default — locked).
-	req := httptest.NewRequest(http.MethodGet, "/api/weigh-ins", nil)
-	req.Header.Set("Authorization", "Bearer secret")
-	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusLocked {
-		t.Fatalf("expected 423 with no programme_start_date set, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// Once the programme "started" 84+ days ago, the read unlocks.
-	if err := settings.Set(t.Context(), conn, settings.ProgrammeStartDateKey, "2000-01-01"); err != nil {
-		t.Fatalf("set start date: %v", err)
-	}
-	req = httptest.NewRequest(http.MethodGet, "/api/weigh-ins", nil)
-	req.Header.Set("Authorization", "Bearer secret")
-	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 once past day 84, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var rows []syncpkg.WeighInRow
-	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(rows) != 1 || rows[0].Date != "2026-01-04" {
-		t.Fatalf("expected the earlier write to be visible now, got %+v", rows)
+	var steps int
+	conn.QueryRow(`SELECT steps FROM steps_logs WHERE date = ?`, "2026-01-04").Scan(&steps)
+	if steps != 7500 {
+		t.Fatalf("expected 7500 steps recorded, got %d", steps)
 	}
 }
 
@@ -332,7 +307,7 @@ func TestCorsHeaderPresentOnARealResponseToo(t *testing.T) {
 	}
 }
 
-func TestGetExportDumpsDataAndGatesWeighInsOnTheVault(t *testing.T) {
+func TestGetExportDumpsData(t *testing.T) {
 	conn, err := db.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -340,9 +315,6 @@ func TestGetExportDumpsDataAndGatesWeighInsOnTheVault(t *testing.T) {
 	defer conn.Close()
 	if _, err := conn.Exec(`INSERT INTO exercises (slug, name, equipment, pressure, impact, increment_kg) VALUES ('squat','Squat','barbell','moderate','low',2.5)`); err != nil {
 		t.Fatalf("seed: %v", err)
-	}
-	if _, err := conn.Exec(`INSERT INTO weigh_ins (date, weight_kg) VALUES ('2026-01-04', 82.5)`); err != nil {
-		t.Fatalf("seed weigh-in: %v", err)
 	}
 
 	router := api.NewRouter(conn, "secret")
@@ -355,20 +327,13 @@ func TestGetExportDumpsDataAndGatesWeighInsOnTheVault(t *testing.T) {
 	}
 
 	var dump struct {
-		VaultLocked bool                        `json:"vault_locked"`
-		Tables      map[string][]map[string]any `json:"tables"`
+		Tables map[string][]map[string]any `json:"tables"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &dump); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !dump.VaultLocked {
-		t.Fatalf("expected vault_locked=true with no programme_start_date set")
-	}
 	if len(dump.Tables["exercises"]) != 1 {
 		t.Fatalf("expected the seeded exercise in the dump, got %+v", dump.Tables["exercises"])
-	}
-	if len(dump.Tables["weigh_ins"]) != 0 {
-		t.Fatalf("expected weigh_ins omitted while the vault is locked, got %+v", dump.Tables["weigh_ins"])
 	}
 }
 

@@ -3,7 +3,6 @@ package settings_test
 import (
 	"database/sql"
 	"testing"
-	"time"
 
 	"github.com/ajayrajen7/anyway/server/internal/db"
 	"github.com/ajayrajen7/anyway/server/internal/settings"
@@ -58,42 +57,5 @@ func TestSetIfAbsentNeverOverwrites(t *testing.T) {
 	value, _, _ := settings.Get(ctx, conn, "programme_start_date")
 	if value != "2026-01-05" {
 		t.Fatalf("expected the first value to stick, got %q", value)
-	}
-}
-
-func TestVaultUnlockedDefaultsLockedWhenNoStartDateRecorded(t *testing.T) {
-	conn := openTestDB(t)
-	unlocked, err := settings.VaultUnlocked(t.Context(), conn, time.Now())
-	if err != nil {
-		t.Fatalf("VaultUnlocked: %v", err)
-	}
-	if unlocked {
-		t.Fatalf("expected locked (conservative default) with no programme_start_date set")
-	}
-}
-
-func TestVaultUnlockedAt84Days(t *testing.T) {
-	conn := openTestDB(t)
-	ctx := t.Context()
-	if err := settings.Set(ctx, conn, settings.ProgrammeStartDateKey, "2026-01-01"); err != nil {
-		t.Fatalf("set start date: %v", err)
-	}
-
-	before := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC) // day 83
-	unlocked, err := settings.VaultUnlocked(ctx, conn, before)
-	if err != nil || unlocked {
-		t.Fatalf("expected still-locked at day 83, got unlocked=%v err=%v", unlocked, err)
-	}
-
-	onDay := time.Date(2026, 3, 26, 0, 0, 0, 0, time.UTC) // exactly day 84
-	unlocked, err = settings.VaultUnlocked(ctx, conn, onDay)
-	if err != nil || !unlocked {
-		t.Fatalf("expected unlocked at exactly day 84, got unlocked=%v err=%v", unlocked, err)
-	}
-
-	after := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
-	unlocked, err = settings.VaultUnlocked(ctx, conn, after)
-	if err != nil || !unlocked {
-		t.Fatalf("expected still unlocked well after day 84, got unlocked=%v err=%v", unlocked, err)
 	}
 }

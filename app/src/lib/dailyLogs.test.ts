@@ -6,15 +6,18 @@ import {
   getCardioLog,
   getMobilityLog,
   getProteinLog,
+  getStepsLog,
   logCardio,
   logMobility,
   logProtein,
+  logSteps,
 } from './dailyLogs';
 
 afterEach(async () => {
   await db.proteinLogs.clear();
   await db.mobilityLogs.clear();
   await db.cardioLogs.clear();
+  await db.stepsLogs.clear();
   await db.outbox.clear();
 });
 
@@ -85,5 +88,26 @@ describe('cardio', () => {
     await logCardio('2026-01-07', 'cross-trainer', 20);
     await clearCardioLog('2026-01-07', 'cross-trainer');
     expect(await getCardioLog('2026-01-07', 'cross-trainer')).toBeUndefined();
+  });
+});
+
+describe('steps', () => {
+  it('records a real count, and queues an outbox entry', async () => {
+    await logSteps('2026-01-05', 6500);
+    expect(await getStepsLog('2026-01-05')).toEqual({ date: '2026-01-05', steps: 6500 });
+
+    const outboxRows = await db.outbox.where({ entity: 'steps_log', entity_id: '2026-01-05' }).toArray();
+    expect(outboxRows).toHaveLength(1);
+    expect(JSON.parse(outboxRows[0].payload)).toEqual({ date: '2026-01-05', steps: 6500 });
+  });
+
+  it('re-logging the same date replaces rather than accumulates', async () => {
+    await logSteps('2026-01-05', 1000);
+    await logSteps('2026-01-05', 2000);
+    expect(await getStepsLog('2026-01-05')).toEqual({ date: '2026-01-05', steps: 2000 });
+  });
+
+  it('is undefined for an unlogged date', async () => {
+    expect(await getStepsLog('2026-01-06')).toBeUndefined();
   });
 });

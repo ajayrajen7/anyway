@@ -17,12 +17,6 @@ export function isAfter6pm(d: Date = new Date()): boolean {
   return d.getHours() >= 18;
 }
 
-// "Weigh-in — Sundays only" (prd.md §A4) — local wall-clock day, same
-// reasoning as isAfter6pm/localDateKey.
-export function isSunday(d: Date = new Date()): boolean {
-  return d.getDay() === 0;
-}
-
 // The inverse of localDateKey — parses via local Date components
 // (year/month/day), never `new Date(dateString)`, which the spec treats a
 // bare YYYY-MM-DD as UTC midnight and would shift the date in any timezone

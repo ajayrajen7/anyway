@@ -60,7 +60,7 @@ func TestUnmatchedClientSideRouteFallsBackToIndexHtmlWithNoRedirect(t *testing.T
 	// has exactly this redirect quirk for an *explicit* /index.html
 	// reference, which is why handlerFor never hands one to it.
 	h := handlerFor(fakeFrontend(), "test-token")
-	for _, path := range []string{"/session/5", "/week", "/weigh"} {
+	for _, path := range []string{"/session/5", "/week", "/coverage"} {
 		rec := get(t, h, path)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("path %s: expected 200 (app shell, no redirect), got %d (Location: %s)", path, rec.Code, rec.Header().Get("Location"))

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPainStrip,
   computeActualCoverage,
+  computeDayCompletion,
   computePrescribedCoverage,
   computeWeeklyVolume,
   datesInWeek,
+  nextWeek,
   previousWeek,
   round1,
   weekBoundsFor,
@@ -29,6 +31,17 @@ describe('weekBoundsFor', () => {
 describe('previousWeek', () => {
   it('shifts both bounds back exactly 7 days', () => {
     expect(previousWeek({ start: '2026-01-05', end: '2026-01-11' })).toEqual({ start: '2025-12-29', end: '2026-01-04' });
+  });
+});
+
+describe('nextWeek', () => {
+  it('shifts both bounds forward exactly 7 days', () => {
+    expect(nextWeek({ start: '2026-01-05', end: '2026-01-11' })).toEqual({ start: '2026-01-12', end: '2026-01-18' });
+  });
+
+  it('round-trips with previousWeek', () => {
+    const bounds = { start: '2026-01-05', end: '2026-01-11' };
+    expect(previousWeek(nextWeek(bounds))).toEqual(bounds);
   });
 });
 
@@ -137,6 +150,34 @@ describe('buildPainStrip', () => {
       { date: '2026-01-05', pain: null },
       { date: '2026-01-06', pain: 'background' },
     ]);
+  });
+});
+
+describe('computeDayCompletion', () => {
+  it('a lifting day is green only when session, protein, and steps are all done', () => {
+    const green = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: true, proteinHit: true, stepsLogged: true });
+    expect(green).toEqual({ date: '2026-01-05', kind: 'lifting', done: 3, total: 3, color: 'green' });
+  });
+
+  it('a lifting day with 1-2 of 3 is yellow', () => {
+    const yellow = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: true, proteinHit: false, stepsLogged: false });
+    expect(yellow.color).toBe('yellow');
+    expect(yellow.done).toBe(1);
+  });
+
+  it('a lifting day with nothing done is red', () => {
+    const red = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: false, proteinHit: false, stepsLogged: false });
+    expect(red.color).toBe('red');
+  });
+
+  it('a cardio_mobility day grades the same 3-slot way (main activity = cardio+mobility combined)', () => {
+    const result = computeDayCompletion('2026-01-07', 'cardio_mobility', { mainActivityDone: true, proteinHit: true, stepsLogged: false });
+    expect(result).toEqual({ date: '2026-01-07', kind: 'cardio_mobility', done: 2, total: 3, color: 'yellow' });
+  });
+
+  it('a rest day has no main-activity slot — only 2 of 2 possible, green needs just protein+steps', () => {
+    const result = computeDayCompletion('2026-01-11', 'rest', { mainActivityDone: false, proteinHit: true, stepsLogged: true });
+    expect(result).toEqual({ date: '2026-01-11', kind: 'rest', done: 2, total: 2, color: 'green' });
   });
 });
 

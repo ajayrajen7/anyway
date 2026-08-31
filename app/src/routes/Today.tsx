@@ -1,7 +1,11 @@
 // A3.2 Today (`/`) — session card, mobility checkbox, protein row (evening
-// only). A3.6 Cardio/Mobility day (Wed/Sat) is rendered inline here too —
-// prd.md's route table has no separate URL for it, so "route to the light
-// flow" means swapping what Today shows, not navigating away.
+// only), steps row. A3.6 Cardio/Mobility day (Wed/Sat) is rendered inline
+// here too — prd.md's route table has no separate URL for it, so "route to
+// the light flow" means swapping what Today shows, not navigating away.
+//
+// UX refactor: the header shows the weekday name (Monday..Sunday), never
+// the phase's own day-template name ("Lower A"/"Lower B") — the owner
+// doesn't think in phase-day labels day to day, they think in weekdays.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, getToday } from '../lib/api';
@@ -11,9 +15,11 @@ import {
   getCardioLog,
   getMobilityLog,
   getProteinLog,
+  getStepsLog,
   logCardio,
   logMobility,
   logProtein,
+  logSteps,
 } from '../lib/dailyLogs';
 import { isAfter6pm, localDateKey } from '../lib/date';
 import { cacheExerciseLibrary } from '../lib/exerciseCache';
@@ -21,6 +27,16 @@ import { MOBILITY_ITEMS } from '../lib/mobilityItems';
 import { cacheProgramme } from '../lib/programmeCache';
 import { cacheToday } from '../lib/todayCache';
 import type { TodayResponse } from '../lib/types';
+
+const WEEKDAY_NAMES: Record<number, string> = {
+  1: 'Monday',
+  2: 'Tuesday',
+  3: 'Wednesday',
+  4: 'Thursday',
+  5: 'Friday',
+  6: 'Saturday',
+  7: 'Sunday',
+};
 
 // Fixed weekly session-length estimates from docs/programme.md Part 2 —
 // display-only, not stored anywhere (duration isn't part of the data model).
@@ -89,14 +105,15 @@ export default function Today() {
 
 function TodayCard({ data }: { data: TodayResponse }) {
   const { day_template: dayTemplate, weekday, session, slots, date } = data;
+  const weekdayName = WEEKDAY_NAMES[weekday] ?? dayTemplate.name;
 
   if (dayTemplate.kind === 'rest') {
     return (
       <div>
-        <h1 className="text-lg font-medium">{dayTemplate.name}</h1>
+        <h1 className="text-lg font-medium">{weekdayName}</h1>
         <p className="mt-2 text-sm text-slate-400">Flat walk only. Not training — just movement.</p>
+        <StepsRow date={date} />
         {isAfter6pm() && <ProteinRow date={date} />}
-        <WeekLink />
       </div>
     );
   }
@@ -104,9 +121,9 @@ function TodayCard({ data }: { data: TodayResponse }) {
   if (dayTemplate.kind === 'cardio_mobility') {
     return (
       <div>
-        <CardioMobilityDay date={date} weekday={weekday} name={dayTemplate.name} />
+        <CardioMobilityDay date={date} weekday={weekday} name={weekdayName} />
+        <StepsRow date={date} />
         {isAfter6pm() && <ProteinRow date={date} />}
-        <WeekLink />
       </div>
     );
   }
@@ -116,7 +133,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
   return (
     <div>
       <div className="rounded-lg bg-slate-800 p-4">
-        <h1 className="text-lg font-medium">{dayTemplate.name}</h1>
+        <h1 className="text-lg font-medium">{weekdayName}</h1>
         <p className="mt-1 text-sm text-slate-400">
           {slots.length} exercises{minutes ? ` · ~${minutes} min` : ''}
         </p>
@@ -130,20 +147,9 @@ function TodayCard({ data }: { data: TodayResponse }) {
         )}
       </div>
       <MobilityCheckbox date={date} />
+      <StepsRow date={date} />
       {isAfter6pm() && <ProteinRow date={date} />}
-      <WeekLink />
     </div>
-  );
-}
-
-// "Any time: View this week's muscle-group coverage" (§A2) — the app has no
-// persistent nav/tab bar yet (out of this milestone's scope), so this is
-// the one link that makes /week actually reachable day to day.
-function WeekLink() {
-  return (
-    <Link to="/week" className="mt-4 block text-sm text-slate-400 underline">
-      This week →
-    </Link>
   );
 }
 
@@ -217,6 +223,47 @@ function ProteinRow({ date }: { date: string }) {
           className={`rounded-md px-4 py-2 text-sm ${hit === false ? 'bg-red-800' : 'bg-slate-700'}`}
         >
           No
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// UX refactor: a manual step count, alongside protein — a real number, not
+// a target-hit yes/no (no step target exists anywhere in the spec).
+const STEPS_INCREMENT = 500;
+
+function StepsRow({ date }: { date: string }) {
+  const [steps, setSteps] = useState<number | undefined>(undefined); // undefined = loading
+
+  useEffect(() => {
+    let cancelled = false;
+    getStepsLog(date).then((log) => {
+      if (!cancelled) setSteps(log?.steps ?? 0);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
+
+  async function adjust(delta: number) {
+    const next = Math.max(0, (steps ?? 0) + delta);
+    setSteps(next);
+    await logSteps(date, next);
+  }
+
+  if (steps === undefined) return null;
+
+  return (
+    <div className="mt-4 flex items-center justify-between rounded-md bg-slate-800 px-3 py-3">
+      <span className="text-sm text-slate-300">Steps</span>
+      <div className="flex items-center gap-3">
+        <button type="button" aria-label="Decrease steps" onClick={() => adjust(-STEPS_INCREMENT)} className="h-8 w-8 rounded-full bg-slate-700">
+          −
+        </button>
+        <span className="text-sm tabular-nums">{steps.toLocaleString()}</span>
+        <button type="button" aria-label="Increase steps" onClick={() => adjust(STEPS_INCREMENT)} className="h-8 w-8 rounded-full bg-slate-700">
+          +
         </button>
       </div>
     </div>
