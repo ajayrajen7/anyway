@@ -7,7 +7,7 @@ import { db } from '../lib/db';
 import type { TodayResponse } from '../lib/types';
 import Today from './Today';
 
-const { getTodayMock, isAfter6pmMock } = vi.hoisted(() => ({ getTodayMock: vi.fn(), isAfter6pmMock: vi.fn(() => false) }));
+const { getTodayMock } = vi.hoisted(() => ({ getTodayMock: vi.fn() }));
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
   return { ...actual, getToday: getTodayMock };
@@ -15,14 +15,6 @@ vi.mock('../lib/api', async () => {
 // cacheExerciseLibrary/cacheProgramme would otherwise attempt a real fetch — stub them out.
 vi.mock('../lib/exerciseCache', () => ({ cacheExerciseLibrary: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../lib/programmeCache', () => ({ cacheProgramme: vi.fn().mockResolvedValue(undefined) }));
-// isAfter6pm is mocked directly (default false) rather than faking system
-// time — vi.useFakeTimers() fights Testing Library's own internal timers
-// used by findBy*/waitFor, since date.test.ts already covers isAfter6pm's
-// own logic in isolation.
-vi.mock('../lib/date', async () => {
-  const actual = await vi.importActual<typeof import('../lib/date')>('../lib/date');
-  return { ...actual, isAfter6pm: isAfter6pmMock };
-});
 
 function renderToday() {
   return render(
@@ -34,7 +26,6 @@ function renderToday() {
 
 afterEach(async () => {
   getTodayMock.mockReset();
-  isAfter6pmMock.mockReset().mockReturnValue(false);
   await db.todayCache.clear();
   await db.proteinLogs.clear();
   await db.mobilityLogs.clear();
@@ -146,16 +137,10 @@ describe('Today screen', () => {
     expect(await db.stepsLogs.get('2026-01-05')).toEqual({ date: '2026-01-05', steps: 500 });
   });
 
-  it('hides the protein row before 18:00', async () => {
-    isAfter6pmMock.mockReturnValue(false);
-    getTodayMock.mockResolvedValue(liftingDay);
-    renderToday();
-    await screen.findByRole('heading', { name: 'Monday' });
-    expect(screen.queryByText('Protein')).not.toBeInTheDocument();
-  });
-
-  it('shows a working protein grams stepper after 18:00, deriving hit from the 120g target', async () => {
-    isAfter6pmMock.mockReturnValue(true);
+  it('shows a working protein grams stepper any time of day, deriving hit from the 120g target', async () => {
+    // Follow-up to the M12 redesign: the evening-only gate was removed once
+    // the owner tried logging protein earlier in the day and found nothing
+    // there — it's shown all day now, same as Steps/Mobility.
     const user = userEvent.setup();
     getTodayMock.mockResolvedValue(liftingDay);
     renderToday();

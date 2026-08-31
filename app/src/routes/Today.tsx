@@ -22,7 +22,7 @@ import {
   logProteinGrams,
   logSteps,
 } from '../lib/dailyLogs';
-import { isAfter6pm, localDateKey } from '../lib/date';
+import { localDateKey } from '../lib/date';
 import { cacheExerciseLibrary } from '../lib/exerciseCache';
 import { MOBILITY_ITEMS } from '../lib/mobilityItems';
 import { cacheProgramme } from '../lib/programmeCache';
@@ -114,7 +114,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
         <h1 className="text-2xl font-semibold">{weekdayName}</h1>
         <p className="text-sm text-ink-muted">Flat walk only. Not training — just movement.</p>
         <StepsRow date={date} />
-        {isAfter6pm() && <ProteinRow date={date} />}
+        <ProteinRow date={date} />
       </div>
     );
   }
@@ -124,7 +124,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
       <div className="flex flex-col gap-3">
         <CardioMobilityDay date={date} weekday={weekday} name={weekdayName} />
         <StepsRow date={date} />
-        {isAfter6pm() && <ProteinRow date={date} />}
+        <ProteinRow date={date} />
       </div>
     );
   }
@@ -147,7 +147,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
       </Card>
       <MobilityRow date={date} />
       <StepsRow date={date} />
-      {isAfter6pm() && <ProteinRow date={date} />}
+      <ProteinRow date={date} />
     </div>
   );
 }
@@ -201,9 +201,9 @@ function MobilityRow({ date }: { date: string }) {
 // Steps — replaces the old Yes/No buttons (owner: "similarly add another
 // manual entry for protein"). `hit` (grams >= 120) is still derived and
 // synced under the hood so Week Plan's grading is untouched — see
-// dailyLogs.ts#logProteinGrams. The evening-only gate (isAfter6pm) is kept
-// as-is; only named here in case that's not what's wanted, since it wasn't
-// part of this specific ask.
+// dailyLogs.ts#logProteinGrams. The old evening-only gate (isAfter6pm) was
+// removed in the same follow-up, once the owner tried logging it earlier in
+// the day and found nothing there — shown all day now, same as Steps/Mobility.
 const PROTEIN_INCREMENT_GRAMS = 10;
 
 function ProteinRow({ date }: { date: string }) {
