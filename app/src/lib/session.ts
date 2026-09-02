@@ -90,6 +90,21 @@ export function buildRunnerSlots(data: TodayResponse, overlay: SessionOverlay): 
   return result.filter((s) => !overlay.removed.includes(s.key));
 }
 
+// The real `slots.id` values behind a session's explicitly-deleted
+// exercises — post-M12 feature 4 ("this week's actual plan becomes next
+// week's base"). `overlay.removed` holds RunnerSlot *keys*, which can be
+// either `slot-<id>` (a real prescribed slot) or `added-<uuid>` (a
+// session-added exercise that was never a real slot to begin with — nothing
+// for the server to deactivate). Sent to the server as
+// `session_complete`'s `removed_slot_ids` so server/internal/sync#ReconcileSlots
+// can tell "deleted on purpose" apart from "just never got to it."
+export function removedSlotIdsFrom(overlay: Pick<SessionOverlay, 'removed'>): number[] {
+  return overlay.removed
+    .filter((key) => key.startsWith('slot-'))
+    .map((key) => Number(key.slice('slot-'.length)))
+    .filter((id) => Number.isFinite(id));
+}
+
 // Neither a weight nor a rep count can go negative via the stepper.
 export function clampNonNegative(n: number): number {
   return Math.max(0, n);

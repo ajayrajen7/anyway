@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ajayrajen7/anyway/server/internal/dayplan"
 	"github.com/ajayrajen7/anyway/server/internal/db"
 	"github.com/ajayrajen7/anyway/server/internal/programme"
 	"github.com/ajayrajen7/anyway/server/internal/seed"
@@ -208,5 +209,56 @@ func TestLastActualReflectsOnlyDoneSets(t *testing.T) {
 	}
 	if last.Reps != 12 || last.LoadKg == nil || *last.LoadKg != 22.5 {
 		t.Fatalf("expected last_actual {22.5kg x12} from the done set, got %+v", last)
+	}
+}
+
+func TestGetResolvesADaySwapToItsPartnersContent(t *testing.T) {
+	conn := seedFullConn(t)
+	defer conn.Close()
+	ctx := context.Background()
+
+	// 2026-01-06 (Tue, Upper A) <-> 2026-01-07 (Wed, cardio_mobility).
+	if err := dayplan.Swap(ctx, conn, "2026-01-06", "2026-01-07"); err != nil {
+		t.Fatalf("Swap: %v", err)
+	}
+
+	wed, err := today.Get(ctx, conn, "2026-01-07")
+	if err != nil {
+		t.Fatalf("Get wed: %v", err)
+	}
+	if wed.Weekday != 3 {
+		t.Fatalf("Weekday must stay Wednesday's own (3) for header display, got %d", wed.Weekday)
+	}
+	if wed.EffectiveWeekday == nil || *wed.EffectiveWeekday != 2 {
+		t.Fatalf("expected EffectiveWeekday 2 (Tuesday), got %v", wed.EffectiveWeekday)
+	}
+	if wed.DayTemplate.Kind != "lifting" {
+		t.Fatalf("expected Wednesday to show Tuesday's lifting content, got kind %q", wed.DayTemplate.Kind)
+	}
+	if wed.Session == nil {
+		t.Fatal("expected a session to be created for the swapped-in lifting content")
+	}
+
+	tue, err := today.Get(ctx, conn, "2026-01-06")
+	if err != nil {
+		t.Fatalf("Get tue: %v", err)
+	}
+	if tue.Weekday != 2 {
+		t.Fatalf("Weekday must stay Tuesday's own (2), got %d", tue.Weekday)
+	}
+	if tue.EffectiveWeekday == nil || *tue.EffectiveWeekday != 3 {
+		t.Fatalf("expected EffectiveWeekday 3 (Wednesday), got %v", tue.EffectiveWeekday)
+	}
+	if tue.DayTemplate.Kind != "cardio_mobility" {
+		t.Fatalf("expected Tuesday to show Wednesday's cardio_mobility content, got kind %q", tue.DayTemplate.Kind)
+	}
+
+	// An unswapped day (Thursday) must carry no EffectiveWeekday at all.
+	thu, err := today.Get(ctx, conn, "2026-01-08")
+	if err != nil {
+		t.Fatalf("Get thu: %v", err)
+	}
+	if thu.EffectiveWeekday != nil {
+		t.Fatalf("expected no EffectiveWeekday for an unswapped day, got %v", thu.EffectiveWeekday)
 	}
 }

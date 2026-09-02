@@ -33,6 +33,7 @@ beforeEach(() => {
 afterEach(async () => {
   await db.loggedSets.clear();
   await db.outbox.clear();
+  await db.sessionOverlay.clear();
 });
 
 describe('SessionSummary', () => {
@@ -59,6 +60,19 @@ describe('SessionSummary', () => {
 
     const entries = await db.outbox.where({ entity: 'session_complete', entity_id: '42' }).toArray();
     expect(entries).toHaveLength(1);
+  });
+
+  // Post-M12 feature 4 ("this week's actual plan becomes next week's
+  // base"): the server needs to know which deletions were real slots.
+  it('queues session_complete with the real slot ids explicitly deleted from this session', async () => {
+    await db.sessionOverlay.put({ sessionId: 42, swaps: {}, added: [], removed: ['slot-5', 'added-uuid-1'] });
+
+    renderSummary(42);
+    await screen.findByText('0 sets done');
+
+    const entries = await db.outbox.where({ entity: 'session_complete', entity_id: '42' }).toArray();
+    expect(entries).toHaveLength(1);
+    expect(JSON.parse(entries[0].payload)).toMatchObject({ removed_slot_ids: [5] });
   });
 
   it('links back to Today', async () => {

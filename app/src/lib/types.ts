@@ -118,6 +118,28 @@ export const DayConfirmation = z.object({
 });
 export type DayConfirmation = z.infer<typeof DayConfirmation>;
 
+// --- Skip a day (post-M12 UX addition) ---
+// A real, distinct, synced state — separate from an unlogged day that later
+// auto-flips to 'missed' server-side (internal/today's sweepMissed). Applies
+// to any day kind: a cardio_mobility/rest day has no `sessions` row to carry
+// a status on, so this can't live there — see dailyLogs.ts, memory.md.
+export const DaySkip = z.object({
+  date: z.string(),
+});
+export type DaySkip = z.infer<typeof DaySkip>;
+
+// --- Swap two days' prescriptions for one week (post-M12 UX addition) ---
+// A local, offline-readable cache of one side of a server-side day_swaps
+// pair (server/internal/dayplan) — populated whenever Week Plan fetches
+// swaps for a displayed week, so DayPreview.tsx can honor a swap without
+// its own network call (see daySwapCache.ts). Not the source of truth (the
+// server is) — just enough to render correctly offline.
+export const DaySwap = z.object({
+  date: z.string(),
+  swapped_with: z.string(),
+});
+export type DaySwap = z.infer<typeof DaySwap>;
+
 // --- GET /api/today (docs/architecture.md §B5, M3) ---
 
 export const ExerciseRef = z.object({
@@ -160,6 +182,13 @@ export type TodaySession = z.infer<typeof TodaySession>;
 export const TodayResponse = z.object({
   date: z.string(),
   weekday: z.number().min(1).max(7),
+  // Set only when a day swap (post-M12 UX addition) is in effect for this
+  // date — the weekday whose *content* day_template/slots actually reflect.
+  // `weekday` itself never changes on a swap (it drives the header, e.g.
+  // "Wednesday"); this is used for weekday-indexed display info instead
+  // (src/lib/dayInfo.ts's SESSION_MINUTES/CARDIO_CONFIG) so a swapped
+  // Wednesday shows Tuesday's duration estimate, not Wednesday's own.
+  effective_weekday: z.number().min(1).max(7).optional(),
   day_template: z.object({
     id: z.number(),
     name: z.string(),

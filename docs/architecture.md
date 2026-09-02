@@ -43,6 +43,8 @@ A freshly-provisioned host's persistent volume starts out completely empty, and 
 
 **Amendment (post-M12, session-detail recovery):** a second deliberate, narrow exception — this one a *read*, not a write, and never on the live logging path either. `SessionOverview.tsx` and `SessionSummary.tsx` each call `GET /api/sessions/:id/sets` (`src/lib/outbox.ts#hydrateSessionFromServer`) once on mount, best-effort and non-blocking: the screen still renders from Dexie first, exactly as before, and the fetch — if it succeeds — only *merges in* server rows whose `client_uuid` isn't already present locally, never replacing or reordering what's already there. This exists because local IndexedDB turned out not to be as durable an assumption as §B2's "Dexie is the source of truth" implies: an iOS "Add to Home Screen" install gets its own storage container, separate from the Safari tab a workout may have been logged in, so a session's local detail can end up looking like it was never logged at all even though the server has every set that was ever successfully synced. `SessionRunner` itself (the actual set-logging screen, `/session/:id/exercise/:key`) is untouched — it still never awaits the network for anything, on any code path. See `memory.md`'s "session data lost" entry for the full incident and reasoning, and §B5 for the new route.
 
+**Amendment (post-M12, day swap):** a third deliberate exception, on a screen that was never offline-first to begin with — `WeekPlan.tsx`'s Swap action (`POST/DELETE /api/day-swaps`) is online-only by design, not a gap. It changes which `day_template` a *future* `GET /api/today` resolves for a date; Week Plan already requires a connection to fetch the programme it renders (`GET /api/programme`, §B5's M8 amendment) before there's anything to swap between. `DayPreview.tsx` (which *is* meant to work fully offline) reads a local cache of already-fetched swap pairs instead of calling the network itself — see §B5's amendment.
+
 ## B3. Schema
 
 ```sql
@@ -170,6 +172,34 @@ it was originally built for). `steps_logs` (migration `0006`) is added: a
 real daily count, shaped like `protein_logs`, alongside the new Steps entry
 on Today (§A3.2) and the new "3 of 3" Week Plan grading (§A3.8).
 
+**Amendment (post-M12, two new UX-requested features — asked and confirmed,
+see `memory.md`):**
+
+```sql
+-- Feature 1: "skip this day" — a real, distinct state, applies to any day
+-- kind (a cardio_mobility/rest day has no `sessions` row to carry a status
+-- on). Migration 0010.
+CREATE TABLE day_skips (date TEXT PRIMARY KEY, skipped_at TEXT NOT NULL);
+
+-- Feature 2: swap which day_template two dates use for one week — a
+-- symmetric pair, migration 0011. server/internal/dayplan is the one place
+-- that reads/writes this; internal/today resolves a date's day_template
+-- from its swap partner's weekday when a row exists here.
+CREATE TABLE day_swaps (date TEXT PRIMARY KEY, swapped_with TEXT NOT NULL);
+
+-- Feature 4: "this week's actual plan becomes next week's base" needs a
+-- soft-delete for `slots` — a real DELETE can violate the FK from
+-- logged_sets.slot_id (this DB runs with `_pragma=foreign_keys(1)`, see
+-- db.go) once a *past* session already references the slot. Migration 0012.
+ALTER TABLE slots ADD COLUMN active INTEGER NOT NULL DEFAULT 1;
+```
+
+`internal/today`'s `slotsFor` and `internal/phase`'s `Get` both now filter
+`WHERE ... AND active = 1` — a deactivated slot simply stops being served,
+its history intact. See `server/internal/dayplan` and
+`server/internal/sync#ReconcileSlots` for the two features' full logic, and
+§B5's amendment below for the new routes.
+
 ## B4. The one query that matters
 
 Weekly actual coverage:
@@ -203,6 +233,10 @@ POST /api/cardio                    → { date, modality, duration_min }
 POST /api/steps                     → { date, steps }        — UX refactor addition, see below
 GET  /api/week?start=               → coverage actual/prescribed + volume + 7 pain values
 GET  /api/programme                 → active phase's full week structure (day_templates + slots) — M8 addition, see below
+POST /api/day-skip                  → { date, skipped }        — post-M12 addition, see below
+POST /api/day-swaps                 → { date_a, date_b }        — post-M12 addition, see below
+DELETE /api/day-swaps/:date         → un-swap date and its partner
+GET  /api/day-swaps?start=&end=     → { pairs: [{date_a,date_b}] } touching that range
 POST /api/sync                      → outbox drain, idempotent by client uuid
 GET  /api/export                    → full JSON dump
 ```
@@ -229,6 +263,19 @@ Also in M9:
 **Amendment (M12):** **`POST /api/exercises/generate`** — `{name, notes?}` in, one `Exercise` (§B3 shape, `source: "llm"`) out. Calls `server/internal/exercisegen` (Claude Haiku 4.5 via the Anthropic API, forced structured tool output), validates the result through the exact same `seed.ValidateExercise` rules a hand-authored seed-file entry has to pass, then inserts it via `seed.InsertOne` — which never overwrites an existing exercise; a colliding slug gets a numeric suffix instead. Needs `ANTHROPIC_API_KEY` set server-side; with no key configured the route answers `501` rather than the server failing to start (same "this feature degrades, not the app" shape as `backup.OffBoxCopy` being `nil` until wired up). See §B2's amendment and `memory.md` for the full reasoning, including why this is the one place a `/session/*`-reachable screen is allowed to touch the network.
 
 **Amendment (post-M12):** **`GET /api/sessions/:id/sets`** — the one read path back out of `logged_sets` (`server/internal/sync#ListSetsForSession`), every other route into that table being write-only by design (see the package's own doc comment). Always `200`s with `{"sets": [...]}`, an empty array for a session with nothing logged (or that doesn't exist) rather than a `404` — the client only ever uses this to fill gaps in its own local copy, so "nothing to add" and "no such session" need no different handling. `client_uuid` is `COALESCE`d to a synthesized `srv-<id>` for the handful of pre-M9 rows that predate that column, since the client's `LoggedSet` schema requires a non-empty string. See §B2's amendment for why this exists and how the client uses it.
+
+**Amendment (post-M12, two new UX-requested features — asked and confirmed, see `memory.md`'s day-skip/day-swap and reconciliation entries):**
+
+- **`GET /api/today` gains `effective_weekday`** (optional int, only present when a day swap is in effect for `date`) — `weekday` itself never changes on a swap (it drives the header, e.g. "Wednesday"); `day_template`/`slots` reflect the swap partner's content, and `effective_weekday` is what the client uses for weekday-indexed *display* info (session-length estimate, cardio modality/duration — `src/lib/dayInfo.ts`) so it matches what's actually shown. A lazily-created `sessions` row for a swapped date is created against the swap partner's `day_template_id`, matching the content actually shown.
+- **`POST /api/day-skip`** — `{date, skipped}`. `skipped: true` upserts `day_skips`; `skipped: false` deletes it (an unskip). Dispatched through `POST /api/sync` as entity `day_skip`, same as every other daily log — the one difference from `protein_log`/`steps_log` is that `false` means delete, not "write a false value," since presence *is* the fact here (like `mobility_logs`' own presence-only model, §B3).
+- **`POST /api/day-swaps` / `DELETE /api/day-swaps/:date` / `GET /api/day-swaps?start=&end=`** — `server/internal/dayplan`. Swapping is **online-only, deliberately** (unlike everything else since M4): it changes which `day_template` a *future* `GET /api/today` resolves for a date, so there's nothing meaningful an offline client could do with it — Week Plan (where this is reached) already requires a connection to fetch the programme it's built on in the first place. `POST` refuses with `409` if either date already has a `sessions` row (`dayplan.ErrAlreadyStarted`) — a session's `day_template_id` is fixed at creation and never revisited (the same "missed days do not reschedule" discipline `internal/today` already follows), so swapping after that point would leave an already-created session silently stale. A local Dexie cache of fetched swap pairs (`src/lib/daySwapCache.ts`) lets `DayPreview.tsx` (otherwise fully offline) honor an already-made swap without its own network call.
+- **`POST /api/sessions/:id/complete`'s body gains `removed_slot_ids`** (`number[]`, feature 4 — see the next amendment) — the session's own `SessionOverlay.removed`, filtered client-side to real `slots.id` values (`src/lib/session.ts#removedSlotIdsFrom`).
+
+**Amendment (post-M12, feature 4 — "this week's actual executed plan becomes the default base for next week, including weights/reps performed" — asked and confirmed, a real ratcheting/adaptive model per the owner's own framing):** `POST /api/sessions/:id/complete` now also calls `server/internal/sync#ReconcileSlots`, which folds what actually happened in the session back into the day_template's own `slots` — **permanently**, for every future week that reuses the same template, not a one-off note. Two things change a slot, and only two:
+  - An exercise with ≥1 *done* set this session updates that slot's `sets`/`reps`/`load_kg` to match what was actually done (`sets` = how many were done; `reps`/`load_kg` = the last done set's numbers). A *swapped-in* exercise updates the same slot's `exercise_id` too — the swap becomes permanent. A session-*added* exercise (no `slot_id`) gets a brand-new slot appended, or updates an already-promoted one from a prior week rather than duplicating it.
+  - An exercise the session's overlay explicitly deleted (`removed_slot_ids`, previous amendment) is deactivated (`active = 0`, §B3's amendment), not hard-deleted.
+
+  **An exercise simply never reached this session (zero done sets, not explicitly deleted) is left completely untouched — owner-confirmed: "keep it prescribed."** Only the overlay's own explicit deletion list means "remove this"; a plain absence of logged sets never does. Reps/load already defaulted to the last thing actually done, *indefinitely* (not just week-to-week), via the pre-existing `last_actual` prefill (`internal/today#lastActual`, exercise-scoped) — that needed no change here; what's new is folding the *target* (`slots.sets/reps/load_kg`) forward too, and making exercise substitutions permanent rather than session-local-only (the M5/M11 "swaps/additions are session-local and never synced" decision is superseded by this feature specifically for the *effect* of a swap/addition once a session completes — the `SessionOverlay` record itself is still never synced, only its consequences are folded into `slots`).
 
 ## B6. Frontend rules Claude Code must enforce
 

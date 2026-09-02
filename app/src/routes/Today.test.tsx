@@ -32,6 +32,7 @@ afterEach(async () => {
   await db.cardioLogs.clear();
   await db.stepsLogs.clear();
   await db.dayConfirmations.clear();
+  await db.daySkips.clear();
   await db.outbox.clear();
 });
 
@@ -316,6 +317,72 @@ describe('Today screen', () => {
 
     expect(await screen.findByRole('checkbox', { name: 'Cross trainer' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /Full mobility/ })).toBeChecked();
+  });
+
+  // Post-M12 UX addition (feature 1): a real, distinct "skip this day" state.
+  it('"Skip this day" is always available, even with nothing else logged, and collapses to a Skipped pill', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue(liftingDay);
+    renderToday();
+
+    await user.click(await screen.findByRole('button', { name: 'Skip this day' }));
+
+    expect(await screen.findByText('⏭ Skipped')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Start session' })).not.toBeInTheDocument();
+    expect(await db.daySkips.get('2026-01-05')).toEqual({ date: '2026-01-05' });
+  });
+
+  it('Edit on a skipped day returns to the full layout with an "Unskip this day" action', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue(liftingDay);
+    renderToday();
+
+    await user.click(await screen.findByRole('button', { name: 'Skip this day' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    expect(await screen.findByRole('link', { name: 'Start session' })).toBeInTheDocument();
+    const unskip = screen.getByRole('button', { name: 'Unskip this day' });
+    await user.click(unskip);
+    expect(screen.queryByText('⏭ Skipped')).not.toBeInTheDocument();
+    expect(await db.daySkips.get('2026-01-05')).toBeUndefined();
+  });
+
+  it('a skip survives a remount — derived from Dexie, not local-only state', async () => {
+    getTodayMock.mockResolvedValue(liftingDay);
+    const { unmount } = renderToday();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Skip this day' }));
+    await screen.findByText('⏭ Skipped');
+    unmount();
+
+    getTodayMock.mockResolvedValue(liftingDay);
+    renderToday();
+    expect(await screen.findByText('⏭ Skipped')).toBeInTheDocument();
+  });
+
+  it('"Done for today" supersedes an earlier skip', async () => {
+    const user = userEvent.setup();
+    getTodayMock.mockResolvedValue({
+      date: '2026-01-11',
+      weekday: 7,
+      day_template: { id: 7, name: 'Off', kind: 'rest' },
+      session: null,
+      slots: [],
+    } satisfies TodayResponse);
+    renderToday();
+
+    await user.click(await screen.findByRole('button', { name: 'Skip this day' }));
+    await screen.findByText('⏭ Skipped');
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    const proteinIncrease = screen.getByRole('button', { name: 'Increase protein grams' });
+    await user.click(proteinIncrease);
+    await user.click(screen.getByRole('button', { name: 'Increase steps' }));
+    await user.click(await screen.findByRole('button', { name: 'Done for today' }));
+
+    expect(await screen.findByText('✓ Done for today')).toBeInTheDocument();
+    expect(screen.queryByText('⏭ Skipped')).not.toBeInTheDocument();
+    expect(await db.daySkips.get('2026-01-11')).toBeUndefined();
   });
 
   it('a "Done for today" button appears on a lifting day once session, protein, and steps are all logged — any protein value counts, not only 120g+', async () => {

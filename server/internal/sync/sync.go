@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // execer is satisfied by *sql.DB — everything here runs as a single
@@ -62,6 +63,15 @@ func LogSet(ctx context.Context, conn execer, p SetPayload) error {
 // queryer is the read counterpart of execer — satisfied by *sql.DB too.
 type queryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// execQueryer is satisfied by *sql.DB — CompleteSession needs both: it
+// writes `sessions.status` and then, via ReconcileSlots, reads and writes
+// `slots` too.
+type execQueryer interface {
+	execer
+	queryer
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // SetRecord is SetPayload plus the server's own row id — the shape returned
@@ -116,16 +126,201 @@ func ListSetsForSession(ctx context.Context, conn queryer, sessionID int64) ([]S
 
 // --- session_complete ---
 
+// CompletePayload's RemovedSlotIDs (post-M12 addition) is the session's own
+// SessionOverlay.removed, filtered client-side to the `slot-<id>` keys (an
+// added-and-then-removed exercise was never a real slot to begin with —
+// see app/src/lib/outbox.ts#completeSession) — the explicit "I deleted this
+// exercise from this session" signal ReconcileSlots needs to tell "deleted
+// on purpose" apart from "just never got to it."
 type CompletePayload struct {
-	SessionID int64   `json:"session_id"`
-	EndedAt   string  `json:"ended_at"`
-	Note      *string `json:"note"`
+	SessionID      int64   `json:"session_id"`
+	EndedAt        string  `json:"ended_at"`
+	Note           *string `json:"note"`
+	RemovedSlotIDs []int64 `json:"removed_slot_ids"`
 }
 
-func CompleteSession(ctx context.Context, conn execer, p CompletePayload) error {
-	_, err := conn.ExecContext(ctx, `
+func CompleteSession(ctx context.Context, conn execQueryer, p CompletePayload) error {
+	if _, err := conn.ExecContext(ctx, `
 		UPDATE sessions SET status = 'completed', ended_at = ?, note = ? WHERE id = ?
-	`, p.EndedAt, p.Note, p.SessionID)
+	`, p.EndedAt, p.Note, p.SessionID); err != nil {
+		return err
+	}
+	return ReconcileSlots(ctx, conn, p.SessionID, p.RemovedSlotIDs)
+}
+
+// ReconcileSlots implements "this week's actual executed plan becomes the
+// default base for next week — including weights/reps performed" (post-M12,
+// asked and confirmed — see memory.md). Runs once, right after a session is
+// marked complete, and folds what actually happened back into the
+// day_template's own `slots` — permanently, for every future week that
+// reuses the same template, not a one-off note ("a real ratcheting/adaptive
+// model," the owner's own words for the confirmed scope).
+//
+// Reps/load already default to the last thing you actually did, indefinitely,
+// via the pre-existing `last_actual` prefill (exercise-scoped, not
+// week-scoped — see today.go#lastActual) — that needed no change here.
+// What's new is folding the *target* (slots.sets/reps/load_kg) forward too,
+// and carrying exercise substitutions forward:
+//
+//   - An exercise with ≥1 *done* set this session updates its slot's
+//     sets/reps/load_kg to match what was actually done (sets = how many you
+//     did; reps/load = your last done set's numbers — the same "most recent
+//     actual" `last_actual` already surfaces). A *swapped-in* exercise
+//     updates that same slot's exercise_id too — the swap becomes permanent.
+//     A session-*added* exercise (no slot_id) gets a brand-new slot appended
+//     to the day_template, or updates an already-promoted one from a prior
+//     week rather than duplicating it.
+//   - An exercise the session's overlay explicitly deleted (removedSlotIDs)
+//     is deactivated (`active = 0`), not hard-deleted — see the
+//     slots.active migration's own comment for why (FK-enforced
+//     logged_sets.slot_id, past sessions may still reference it).
+//
+// An exercise simply never reached this session (zero done sets, not
+// explicitly deleted) is left completely untouched — owner-confirmed:
+// "keep it prescribed." Only the overlay's own explicit deletion list means
+// "remove this," never a plain absence of logged sets.
+func ReconcileSlots(ctx context.Context, conn execQueryer, sessionID int64, removedSlotIDs []int64) error {
+	var dayTemplateID sql.NullInt64
+	if err := conn.QueryRowContext(ctx, `SELECT day_template_id FROM sessions WHERE id = ?`, sessionID).Scan(&dayTemplateID); err != nil {
+		return fmt.Errorf("reconcile: load session %d: %w", sessionID, err)
+	}
+	if !dayTemplateID.Valid {
+		return nil // a non-lifting session has no day_template/slots to reconcile against
+	}
+
+	type group struct {
+		slotID     sql.NullInt64
+		exerciseID int64
+		sets       int
+		lastReps   int
+		lastLoad   *float64
+	}
+	groups := map[int64]*group{} // keyed by exercise_id
+	order := []int64{}           // first-seen order, for deterministic new-slot positioning
+
+	rows, err := conn.QueryContext(ctx, `
+		SELECT slot_id, exercise_id, set_index, reps, load_kg
+		FROM logged_sets
+		WHERE session_id = ? AND status = 'done'
+		ORDER BY exercise_id, set_index
+	`, sessionID)
+	if err != nil {
+		return fmt.Errorf("reconcile: load done sets for session %d: %w", sessionID, err)
+	}
+	for rows.Next() {
+		var slotID sql.NullInt64
+		var exerciseID int64
+		var setIndex, reps int
+		var loadKg sql.NullFloat64
+		if err := rows.Scan(&slotID, &exerciseID, &setIndex, &reps, &loadKg); err != nil {
+			rows.Close()
+			return err
+		}
+		g, ok := groups[exerciseID]
+		if !ok {
+			g = &group{exerciseID: exerciseID}
+			groups[exerciseID] = g
+			order = append(order, exerciseID)
+		}
+		g.sets++
+		// Rows arrive ordered by set_index within each exercise, so the last
+		// one seen is always the highest set_index — the same "most recent
+		// actual" convention today.go#lastActual already uses.
+		g.lastReps = reps
+		if loadKg.Valid {
+			v := loadKg.Float64
+			g.lastLoad = &v
+		} else {
+			g.lastLoad = nil
+		}
+		if slotID.Valid && !g.slotID.Valid {
+			g.slotID = slotID
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close() // close before issuing more queries — db.Open caps the pool at one connection
+
+	for _, exerciseID := range order {
+		g := groups[exerciseID]
+		if g.slotID.Valid {
+			if _, err := conn.ExecContext(ctx, `
+				UPDATE slots SET exercise_id = ?, sets = ?, reps = ?, load_kg = ? WHERE id = ?
+			`, g.exerciseID, g.sets, g.lastReps, g.lastLoad, g.slotID.Int64); err != nil {
+				return fmt.Errorf("reconcile: update slot %d: %w", g.slotID.Int64, err)
+			}
+			continue
+		}
+
+		// No slot_id — a session-added exercise. Reuse an already-active
+		// slot for it in this day_template if a prior week's session
+		// already promoted it, rather than inserting a duplicate every
+		// week it's logged.
+		var existingID sql.NullInt64
+		err := conn.QueryRowContext(ctx, `
+			SELECT id FROM slots WHERE day_template_id = ? AND exercise_id = ? AND active = 1
+		`, dayTemplateID.Int64, g.exerciseID).Scan(&existingID)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("reconcile: look up existing slot for exercise %d: %w", g.exerciseID, err)
+		}
+		if existingID.Valid {
+			if _, err := conn.ExecContext(ctx, `
+				UPDATE slots SET sets = ?, reps = ?, load_kg = ? WHERE id = ?
+			`, g.sets, g.lastReps, g.lastLoad, existingID.Int64); err != nil {
+				return fmt.Errorf("reconcile: update promoted slot %d: %w", existingID.Int64, err)
+			}
+			continue
+		}
+
+		var maxPos sql.NullInt64
+		if err := conn.QueryRowContext(ctx, `SELECT MAX(position) FROM slots WHERE day_template_id = ?`, dayTemplateID.Int64).Scan(&maxPos); err != nil {
+			return fmt.Errorf("reconcile: load max position for day_template %d: %w", dayTemplateID.Int64, err)
+		}
+		nextPos := int64(1)
+		if maxPos.Valid {
+			nextPos = maxPos.Int64 + 1
+		}
+		if _, err := conn.ExecContext(ctx, `
+			INSERT INTO slots (day_template_id, position, exercise_id, sets, reps, load_kg, note, active)
+			VALUES (?, ?, ?, ?, ?, ?, NULL, 1)
+		`, dayTemplateID.Int64, nextPos, g.exerciseID, g.sets, g.lastReps, g.lastLoad); err != nil {
+			return fmt.Errorf("reconcile: insert new slot for exercise %d: %w", g.exerciseID, err)
+		}
+	}
+
+	for _, slotID := range removedSlotIDs {
+		if _, err := conn.ExecContext(ctx, `
+			UPDATE slots SET active = 0 WHERE id = ? AND day_template_id = ?
+		`, slotID, dayTemplateID.Int64); err != nil {
+			return fmt.Errorf("reconcile: deactivate slot %d: %w", slotID, err)
+		}
+	}
+	return nil
+}
+
+// --- day_skip ---
+
+// DaySkipPayload (post-M12 addition) — a real, distinct "not doing this
+// day" state, separate from an unlogged day that internal/today's
+// sweepMissed later flips to 'missed'. Applies to any day kind — a
+// cardio_mobility/rest day has no `sessions` row to carry a status on, so
+// this can't live there.
+type DaySkipPayload struct {
+	Date    string `json:"date"`
+	Skipped bool   `json:"skipped"` // false = undo a skip (see app/src/lib/dailyLogs.ts#clearSkipDay)
+}
+
+func DaySkip(ctx context.Context, conn execer, p DaySkipPayload) error {
+	if !p.Skipped {
+		_, err := conn.ExecContext(ctx, `DELETE FROM day_skips WHERE date = ?`, p.Date)
+		return err
+	}
+	_, err := conn.ExecContext(ctx, `
+		INSERT INTO day_skips (date, skipped_at) VALUES (?, ?)
+		ON CONFLICT(date) DO UPDATE SET skipped_at = excluded.skipped_at
+	`, p.Date, time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 
@@ -306,6 +501,12 @@ func dispatch(ctx context.Context, conn *sql.DB, e Entry) error {
 			return fmt.Errorf("decode steps_log payload: %w", err)
 		}
 		return Steps(ctx, conn, p)
+	case "day_skip":
+		var p DaySkipPayload
+		if err := json.Unmarshal(e.Payload, &p); err != nil {
+			return fmt.Errorf("decode day_skip payload: %w", err)
+		}
+		return DaySkip(ctx, conn, p)
 	default:
 		return fmt.Errorf("unknown outbox entity %q", e.Entity)
 	}

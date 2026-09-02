@@ -20,6 +20,8 @@ var tables = []string{
 	"exercises", "exercise_muscles", "phases", "day_templates", "slots",
 	"slot_swaps", "sessions", "logged_sets", "morning_checks",
 	"protein_logs", "mobility_logs", "cardio_logs", "steps_logs", "outbox", "settings",
+	// Post-M12 UX additions (feature 1/2) — see memory.md.
+	"day_skips", "day_swaps",
 }
 
 type Dump struct {

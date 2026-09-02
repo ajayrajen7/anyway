@@ -144,7 +144,10 @@ export function round1(n: number): number {
 // derived and stored on the log row itself (`ProteinLog.hit`) — it's just
 // no longer what gates day completion anywhere.
 export type DayKind = 'lifting' | 'cardio_mobility' | 'rest';
-export type DayColor = 'green' | 'yellow' | 'red';
+// 'skipped' (post-M12 UX addition): a deliberate "not doing this day," kept
+// visually and semantically distinct from 'red' (nothing logged, possibly
+// just not reached yet) — see src/lib/types.ts#DaySkip and memory.md.
+export type DayColor = 'green' | 'yellow' | 'red' | 'skipped';
 
 export interface DayCompletion {
   date: string;
@@ -157,11 +160,15 @@ export interface DayCompletion {
 export function computeDayCompletion(
   date: string,
   kind: DayKind,
-  signals: { mainActivityDone: boolean; proteinLogged: boolean; stepsLogged: boolean },
+  signals: { mainActivityDone: boolean; proteinLogged: boolean; stepsLogged: boolean; skipped?: boolean },
 ): DayCompletion {
   const items = kind === 'rest' ? [signals.proteinLogged, signals.stepsLogged] : [signals.mainActivityDone, signals.proteinLogged, signals.stepsLogged];
   const total = items.length;
   const done = items.filter(Boolean).length;
-  const color: DayColor = done >= total ? 'green' : done > 0 ? 'yellow' : 'red';
+  // A skip overrides the color even if some fields happened to get logged
+  // before the skip was tapped — "I'm not doing this day" is the stronger
+  // fact — but `done`/`total` still reflect whatever's actually recorded,
+  // so a caller isn't lying about the raw counts, only the color verdict.
+  const color: DayColor = signals.skipped ? 'skipped' : done >= total ? 'green' : done > 0 ? 'yellow' : 'red';
   return { date, kind, done, total, color };
 }

@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Card, primaryButtonClass } from '../components/ui';
 import { completeSession, hydrateSessionFromServer, loggedSetsForSession } from '../lib/outbox';
-import { computeSessionTotals, type SessionTotals } from '../lib/session';
+import { getOverlay } from '../lib/overlay';
+import { computeSessionTotals, removedSlotIdsFrom, type SessionTotals } from '../lib/session';
 
 export default function SessionSummary() {
   const { id } = useParams<{ id: string }>();
@@ -15,7 +16,8 @@ export default function SessionSummary() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loggedSetsForSession(sessionId), completeSession(sessionId)]).then(([sets]) => {
+    Promise.all([loggedSetsForSession(sessionId), getOverlay(sessionId)]).then(([sets, overlay]) => {
+      completeSession(sessionId, removedSlotIdsFrom(overlay));
       if (!cancelled) setTotals(computeSessionTotals(sets));
     });
     return () => {

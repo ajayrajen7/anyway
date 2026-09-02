@@ -103,3 +103,27 @@ export async function getDayConfirmation(date: string) {
 export async function confirmDayDone(date: string): Promise<void> {
   await db.dayConfirmations.put({ date });
 }
+
+// --- Skip a day (post-M12 UX addition) — a real, distinct, synced state ---
+// Applies to any day kind (lifting/cardio_mobility/rest), unlike a session's
+// own status: a cardio_mobility/rest day has no `sessions` row at all. See
+// src/lib/types.ts#DaySkip. Reversible — Today.tsx's "Edit" link on a
+// skipped day can clear it, same as it can for "Done for today".
+
+export async function getSkipLog(date: string) {
+  return db.daySkips.get(date);
+}
+
+export async function logSkipDay(date: string): Promise<void> {
+  await db.transaction('rw', db.daySkips, db.outbox, async () => {
+    await db.daySkips.put({ date });
+    await appendOutbox('day_skip', date, { date, skipped: true });
+  });
+}
+
+export async function clearSkipDay(date: string): Promise<void> {
+  await db.transaction('rw', db.daySkips, db.outbox, async () => {
+    await db.daySkips.delete(date);
+    await appendOutbox('day_skip', date, { date, skipped: false });
+  });
+}

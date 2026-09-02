@@ -358,3 +358,285 @@ func TestListSetsForSessionSynthesizesAClientUUIDForALegacyNullRow(t *testing.T)
 		t.Fatalf("expected a synthesized client_uuid %q, got %q", want, sets[0].ClientUUID)
 	}
 }
+
+// --- day_skip ---
+
+func TestDaySkipUpsertsThenClears(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+
+	if err := syncpkg.DaySkip(ctx, conn, syncpkg.DaySkipPayload{Date: "2026-01-06", Skipped: true}); err != nil {
+		t.Fatalf("skip: %v", err)
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM day_skips WHERE date = '2026-01-06'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("expected a day_skips row, count=%d err=%v", n, err)
+	}
+
+	// Replaying the same skip (a retried sync) must not create a second row.
+	if err := syncpkg.DaySkip(ctx, conn, syncpkg.DaySkipPayload{Date: "2026-01-06", Skipped: true}); err != nil {
+		t.Fatalf("replayed skip: %v", err)
+	}
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM day_skips WHERE date = '2026-01-06'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("expected still exactly 1 row after a replay, count=%d err=%v", n, err)
+	}
+
+	if err := syncpkg.DaySkip(ctx, conn, syncpkg.DaySkipPayload{Date: "2026-01-06", Skipped: false}); err != nil {
+		t.Fatalf("unskip: %v", err)
+	}
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM day_skips WHERE date = '2026-01-06'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("expected the row gone after unskip, count=%d err=%v", n, err)
+	}
+}
+
+// --- ReconcileSlots (post-M12 "this week's actual becomes next week's base") ---
+
+// seedSlot inserts a minimal phase/day_template/exercise/slot chain — raw
+// SQL, not the full seed files, since ReconcileSlots tests only need one or
+// two slots to exercise the reconciliation itself.
+func seedSlot(t *testing.T, conn *sql.DB, dayTemplateID int64, slug string, sets, reps int, loadKg float64) (slotID, exerciseID int64) {
+	t.Helper()
+	res, err := conn.Exec(`
+		INSERT INTO exercises (slug, name, equipment, pressure, impact, increment_kg) VALUES (?, ?, 'machine', 'moderate', 'none', 5)
+	`, slug, slug)
+	if err != nil {
+		t.Fatalf("seed exercise %s: %v", slug, err)
+	}
+	exerciseID, _ = res.LastInsertId()
+	res, err = conn.Exec(`
+		INSERT INTO slots (day_template_id, position, exercise_id, sets, reps, load_kg)
+		VALUES (?, (SELECT COALESCE(MAX(position), 0) + 1 FROM slots WHERE day_template_id = ?), ?, ?, ?, ?)
+	`, dayTemplateID, dayTemplateID, exerciseID, sets, reps, loadKg)
+	if err != nil {
+		t.Fatalf("seed slot %s: %v", slug, err)
+	}
+	slotID, _ = res.LastInsertId()
+	return
+}
+
+func seedDayTemplateAndSession(t *testing.T, conn *sql.DB) (sessionID, dayTemplateID int64) {
+	t.Helper()
+	res, err := conn.Exec(`INSERT INTO phases (name, start_week, end_week) VALUES ('P1', 1, 6)`)
+	if err != nil {
+		t.Fatalf("seed phase: %v", err)
+	}
+	phaseID, _ := res.LastInsertId()
+	res, err = conn.Exec(`INSERT INTO day_templates (phase_id, weekday, name, kind) VALUES (?, 1, 'Lower A', 'lifting')`, phaseID)
+	if err != nil {
+		t.Fatalf("seed day_template: %v", err)
+	}
+	dayTemplateID, _ = res.LastInsertId()
+	res, err = conn.Exec(`INSERT INTO sessions (date, day_template_id, status) VALUES ('2026-01-05', ?, 'planned')`, dayTemplateID)
+	if err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	sessionID, _ = res.LastInsertId()
+	return
+}
+
+func logDoneSet(t *testing.T, conn *sql.DB, sessionID int64, slotID *int64, exerciseID int64, setIndex, reps int, loadKg float64) {
+	t.Helper()
+	if _, err := conn.Exec(`
+		INSERT INTO logged_sets (session_id, slot_id, exercise_id, set_index, load_kg, reps, status, provenance, logged_at)
+		VALUES (?, ?, ?, ?, ?, ?, 'done', 'prescribed', '2026-01-05T09:00:00Z')
+	`, sessionID, slotID, exerciseID, setIndex, loadKg, reps); err != nil {
+		t.Fatalf("log done set: %v", err)
+	}
+}
+
+func TestReconcileSlotsUpdatesTargetFromActualPerformance(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, dayTemplateID := seedDayTemplateAndSession(t, conn)
+	slotID, exerciseID := seedSlot(t, conn, dayTemplateID, "leg-press", 3, 10, 20)
+
+	// Actually did 4 sets, last one 12 reps @ 25kg — more than prescribed.
+	logDoneSet(t, conn, sessionID, &slotID, exerciseID, 1, 10, 20)
+	logDoneSet(t, conn, sessionID, &slotID, exerciseID, 2, 10, 22.5)
+	logDoneSet(t, conn, sessionID, &slotID, exerciseID, 3, 11, 25)
+	logDoneSet(t, conn, sessionID, &slotID, exerciseID, 4, 12, 25)
+
+	if err := syncpkg.ReconcileSlots(ctx, conn, sessionID, nil); err != nil {
+		t.Fatalf("ReconcileSlots: %v", err)
+	}
+
+	var sets, reps int
+	var loadKg float64
+	if err := conn.QueryRow(`SELECT sets, reps, load_kg FROM slots WHERE id = ?`, slotID).Scan(&sets, &reps, &loadKg); err != nil {
+		t.Fatalf("read slot: %v", err)
+	}
+	if sets != 4 || reps != 12 || loadKg != 25 {
+		t.Fatalf("expected {sets:4 reps:12 load:25} from actual performance, got {%d %d %v}", sets, reps, loadKg)
+	}
+}
+
+func TestReconcileSlotsLeavesAnUntouchedSlotAlone(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, dayTemplateID := seedDayTemplateAndSession(t, conn)
+	loggedSlot, loggedExercise := seedSlot(t, conn, dayTemplateID, "leg-press", 3, 10, 20)
+	untouchedSlot, _ := seedSlot(t, conn, dayTemplateID, "hip-thrust", 3, 8, 30)
+
+	logDoneSet(t, conn, sessionID, &loggedSlot, loggedExercise, 1, 10, 20)
+
+	if err := syncpkg.ReconcileSlots(ctx, conn, sessionID, nil); err != nil {
+		t.Fatalf("ReconcileSlots: %v", err)
+	}
+
+	// hip-thrust had zero done sets this session — "keep it prescribed"
+	// (owner-confirmed): it must be entirely untouched.
+	var sets, reps int
+	var loadKg float64
+	if err := conn.QueryRow(`SELECT sets, reps, load_kg FROM slots WHERE id = ?`, untouchedSlot).Scan(&sets, &reps, &loadKg); err != nil {
+		t.Fatalf("read slot: %v", err)
+	}
+	if sets != 3 || reps != 8 || loadKg != 30 {
+		t.Fatalf("expected the untouched slot unchanged, got {%d %d %v}", sets, reps, loadKg)
+	}
+}
+
+func TestReconcileSlotsMakesASwapPermanent(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, dayTemplateID := seedDayTemplateAndSession(t, conn)
+	slotID, _ := seedSlot(t, conn, dayTemplateID, "leg-press", 3, 10, 20)
+	// The swapped-in exercise — done sets logged against the *original*
+	// slot_id but a *different* exercise_id, exactly how a mid-session swap
+	// is actually recorded (see app/src/lib/overlay.ts#applySwap).
+	res, err := conn.Exec(`INSERT INTO exercises (slug, name, equipment, pressure, impact, increment_kg) VALUES ('hack-squat','Hack Squat','machine','moderate','none',5)`)
+	if err != nil {
+		t.Fatalf("seed swapped-in exercise: %v", err)
+	}
+	swappedExerciseID, _ := res.LastInsertId()
+
+	logDoneSet(t, conn, sessionID, &slotID, swappedExerciseID, 1, 10, 40)
+
+	if err := syncpkg.ReconcileSlots(ctx, conn, sessionID, nil); err != nil {
+		t.Fatalf("ReconcileSlots: %v", err)
+	}
+
+	var exerciseID int64
+	if err := conn.QueryRow(`SELECT exercise_id FROM slots WHERE id = ?`, slotID).Scan(&exerciseID); err != nil {
+		t.Fatalf("read slot: %v", err)
+	}
+	if exerciseID != swappedExerciseID {
+		t.Fatalf("expected the slot's exercise_id to become the swapped-in one (%d), got %d", swappedExerciseID, exerciseID)
+	}
+}
+
+func TestReconcileSlotsPromotesAnAddedExerciseToANewSlot(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, dayTemplateID := seedDayTemplateAndSession(t, conn)
+	_, _ = seedSlot(t, conn, dayTemplateID, "leg-press", 3, 10, 20) // an existing prescribed slot
+	res, err := conn.Exec(`INSERT INTO exercises (slug, name, equipment, pressure, impact, increment_kg) VALUES ('lunge','Lunge','bodyweight','moderate','low',1)`)
+	if err != nil {
+		t.Fatalf("seed added exercise: %v", err)
+	}
+	addedExerciseID, _ := res.LastInsertId()
+
+	// slot_id NULL — how an added (not prescribed) exercise's logged sets
+	// are always recorded (see app/src/lib/session.ts#buildRunnerSlots).
+	logDoneSet(t, conn, sessionID, nil, addedExerciseID, 1, 12, 0)
+	logDoneSet(t, conn, sessionID, nil, addedExerciseID, 2, 12, 0)
+
+	if err := syncpkg.ReconcileSlots(ctx, conn, sessionID, nil); err != nil {
+		t.Fatalf("ReconcileSlots: %v", err)
+	}
+
+	var count int
+	var sets, reps, position int
+	if err := conn.QueryRow(`
+		SELECT COUNT(*), MAX(sets), MAX(reps), MAX(position) FROM slots WHERE day_template_id = ? AND exercise_id = ? AND active = 1
+	`, dayTemplateID, addedExerciseID).Scan(&count, &sets, &reps, &position); err != nil {
+		t.Fatalf("read new slot: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one new slot for the added exercise, got %d", count)
+	}
+	if sets != 2 || reps != 12 {
+		t.Fatalf("expected the new slot to reflect what was actually done (2x12), got %dx%d", sets, reps)
+	}
+	if position != 2 {
+		t.Fatalf("expected the new slot appended after the existing one (position 2), got %d", position)
+	}
+}
+
+func TestReconcileSlotsReusesAnAlreadyPromotedSlotRatherThanDuplicating(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	res, err := conn.Exec(`INSERT INTO exercises (slug, name, equipment, pressure, impact, increment_kg) VALUES ('lunge','Lunge','bodyweight','moderate','low',1)`)
+	if err != nil {
+		t.Fatalf("seed exercise: %v", err)
+	}
+	addedExerciseID, _ := res.LastInsertId()
+
+	// Week 1: promote it via one session.
+	session1, dayTemplateID := seedDayTemplateAndSession(t, conn)
+	logDoneSet(t, conn, session1, nil, addedExerciseID, 1, 12, 0)
+	if err := syncpkg.ReconcileSlots(ctx, conn, session1, nil); err != nil {
+		t.Fatalf("first ReconcileSlots: %v", err)
+	}
+
+	// Week 2: a second session against the *same* day_template logs the
+	// now-promoted exercise again (still with slot_id NULL, since the
+	// client's own overlay never learns about the server-side promotion).
+	res, err = conn.Exec(`INSERT INTO sessions (date, day_template_id, status) VALUES ('2026-01-12', ?, 'planned')`, dayTemplateID)
+	if err != nil {
+		t.Fatalf("seed second session: %v", err)
+	}
+	session2, _ := res.LastInsertId()
+	logDoneSet(t, conn, session2, nil, addedExerciseID, 1, 15, 0)
+	if err := syncpkg.ReconcileSlots(ctx, conn, session2, nil); err != nil {
+		t.Fatalf("second ReconcileSlots: %v", err)
+	}
+
+	var count, reps int
+	if err := conn.QueryRow(`
+		SELECT COUNT(*), MAX(reps) FROM slots WHERE day_template_id = ? AND exercise_id = ? AND active = 1
+	`, dayTemplateID, addedExerciseID).Scan(&count, &reps); err != nil {
+		t.Fatalf("read slot: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected still exactly one slot (updated, not duplicated), got %d", count)
+	}
+	if reps != 15 {
+		t.Fatalf("expected the existing slot updated to week 2's actual (15 reps), got %d", reps)
+	}
+}
+
+func TestReconcileSlotsDeactivatesAnExplicitlyRemovedSlot(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	sessionID, dayTemplateID := seedDayTemplateAndSession(t, conn)
+	removedSlot, _ := seedSlot(t, conn, dayTemplateID, "leg-press", 3, 10, 20)
+
+	// Zero logged sets for it this session — it was deleted from the
+	// session's list before ever being logged, not just skipped.
+	if err := syncpkg.ReconcileSlots(ctx, conn, sessionID, []int64{removedSlot}); err != nil {
+		t.Fatalf("ReconcileSlots: %v", err)
+	}
+
+	var active int
+	if err := conn.QueryRow(`SELECT active FROM slots WHERE id = ?`, removedSlot).Scan(&active); err != nil {
+		t.Fatalf("read slot: %v", err)
+	}
+	if active != 0 {
+		t.Fatalf("expected the removed slot deactivated, active=%d", active)
+	}
+}
+
+func TestReconcileSlotsIsANoOpForANonLiftingSession(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := t.Context()
+	if _, err := conn.Exec(`INSERT INTO sessions (date, day_template_id, status) VALUES ('2026-01-07', NULL, 'planned')`); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	var sessionID int64
+	if err := conn.QueryRow(`SELECT id FROM sessions WHERE date = '2026-01-07'`).Scan(&sessionID); err != nil {
+		t.Fatalf("read session id: %v", err)
+	}
+	if err := syncpkg.ReconcileSlots(ctx, conn, sessionID, nil); err != nil {
+		t.Fatalf("expected no error for a non-lifting session, got %v", err)
+	}
+}

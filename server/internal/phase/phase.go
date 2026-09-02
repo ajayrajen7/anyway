@@ -87,7 +87,7 @@ func Get(ctx context.Context, conn *sql.DB) (*Response, error) {
 
 	for i := range dayTemplates {
 		slotRows, err := conn.QueryContext(ctx, `
-			SELECT id, exercise_id, sets, reps, load_kg FROM slots WHERE day_template_id = ? ORDER BY position
+			SELECT id, exercise_id, sets, reps, load_kg FROM slots WHERE day_template_id = ? AND active = 1 ORDER BY position
 		`, dayTemplates[i].ID)
 		if err != nil {
 			return nil, fmt.Errorf("load slots for day_template %d: %w", dayTemplates[i].ID, err)

@@ -7,6 +7,8 @@ import type {
   CachedToday,
   CardioLog,
   DayConfirmation,
+  DaySkip,
+  DaySwap,
   Exercise,
   LoggedSet,
   MobilityLog,
@@ -30,6 +32,8 @@ export class AppDatabase extends Dexie {
   programmeCache!: Table<CachedProgramme, number>;
   stepsLogs!: Table<StepsLog, string>;
   dayConfirmations!: Table<DayConfirmation, string>;
+  daySkips!: Table<DaySkip, string>;
+  daySwaps!: Table<DaySwap, string>;
 
   constructor() {
     super('anyway');
@@ -88,6 +92,16 @@ export class AppDatabase extends Dexie {
     // collapse — see src/lib/types.ts#DayConfirmation for the full reasoning.
     this.version(8).stores({
       dayConfirmations: 'date',
+    });
+    // Post-M12 UX additions: skip a day (daySkips, keyed by date — same
+    // presence-plus-outbox pattern as every other daily log) and a local,
+    // offline-readable cache of server-side day swaps (daySwaps — the
+    // server's day_swaps table is the source of truth; this just lets
+    // DayPreview.tsx honor a swap without its own network call). See
+    // src/lib/types.ts#DaySkip/DaySwap, memory.md.
+    this.version(9).stores({
+      daySkips: 'date',
+      daySwaps: 'date',
     });
   }
 }

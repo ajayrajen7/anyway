@@ -97,11 +97,23 @@ export async function loggedSetsForSession(sessionId: number): Promise<LoggedSet
 // Queues a "mark this session complete" intent for the M9 sync worker
 // (POST /api/sessions/:id/complete). Idempotent per session — revisiting
 // the summary screen must not pile up duplicate outbox entries.
-export async function completeSession(sessionId: number): Promise<void> {
+//
+// `removedSlotIds` (post-M12 addition, feature 4 — "this week's actual plan
+// becomes next week's base") is the session's own SessionOverlay.removed,
+// filtered by the caller to real `slots.id` values (an added-then-removed
+// exercise was never a real slot — see src/lib/session.ts#buildRunnerSlots'
+// `key` format, `slot-<id>` vs `added-<uuid>`). The server's
+// ReconcileSlots uses this to tell "deleted on purpose" apart from "just
+// never got to it" — see server/internal/sync#ReconcileSlots.
+export async function completeSession(sessionId: number, removedSlotIds: number[] = []): Promise<void> {
   const entityId = String(sessionId);
   const existing = await db.outbox.where({ entity: 'session_complete', entity_id: entityId }).first();
   if (existing) return;
-  await appendOutbox('session_complete', entityId, { session_id: sessionId, ended_at: new Date().toISOString() });
+  await appendOutbox('session_complete', entityId, {
+    session_id: sessionId,
+    ended_at: new Date().toISOString(),
+    removed_slot_ids: removedSlotIds,
+  });
 }
 
 // Recovers a session's set-by-set detail from the server when the local

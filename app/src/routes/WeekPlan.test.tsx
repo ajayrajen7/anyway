@@ -2,15 +2,25 @@
 // underlying grading logic lives in src/lib/week.test.ts; this file checks
 // the screen wires that data through and renders it). Seeds Dexie directly,
 // same pattern as Coverage.test.tsx/SessionFlows.test.tsx.
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WeekPlan from './WeekPlan';
 import { db } from '../lib/db';
 import { localDateKey, parseDateKey } from '../lib/date';
 import { weekBoundsFor } from '../lib/week';
 import type { ProgrammeResponse } from '../lib/types';
+
+const { swapDaysMock, unswapDayMock, getDaySwapsMock } = vi.hoisted(() => ({
+  swapDaysMock: vi.fn(),
+  unswapDayMock: vi.fn(),
+  getDaySwapsMock: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return { ...actual, swapDays: swapDaysMock, unswapDay: unswapDayMock, getDaySwaps: getDaySwapsMock };
+});
 
 function renderWeekPlan() {
   return render(
@@ -21,6 +31,9 @@ function renderWeekPlan() {
 }
 
 afterEach(async () => {
+  swapDaysMock.mockReset();
+  unswapDayMock.mockReset();
+  getDaySwapsMock.mockReset().mockResolvedValue([]);
   await db.programmeCache.clear();
   await db.todayCache.clear();
   await db.outbox.clear();
@@ -28,6 +41,8 @@ afterEach(async () => {
   await db.stepsLogs.clear();
   await db.cardioLogs.clear();
   await db.mobilityLogs.clear();
+  await db.daySkips.clear();
+  await db.daySwaps.clear();
 });
 
 describe('Week Plan screen', () => {
@@ -165,5 +180,108 @@ describe('Week Plan screen', () => {
 
     await user.click(nextButton);
     await screen.findByText('This Week');
+  });
+
+  // Post-M12 UX addition (feature 1): a per-row Skip action, distinct from
+  // "nothing logged" (red).
+  it('Skip on a row marks it Skipped, and Unskip clears it', async () => {
+    const user = userEvent.setup();
+    const monday = weekBoundsFor(localDateKey()).start;
+    const programme: ProgrammeResponse = {
+      phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
+      day_templates: [{ id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] }],
+    };
+    await db.programmeCache.put({ id: 1, cachedAt: new Date().toISOString(), data: programme });
+
+    renderWeekPlan();
+    await screen.findByText('Monday');
+
+    const mondayRow = screen.getByText('Monday').closest('li')!;
+    await user.click(within(mondayRow).getByRole('button', { name: 'Skip' }));
+
+    expect(await within(mondayRow).findByText('Skipped')).toBeInTheDocument();
+    expect(within(mondayRow).getByRole('button', { name: 'Unskip' })).toBeInTheDocument();
+    expect(await db.daySkips.get(monday)).toEqual({ date: monday });
+
+    await user.click(within(mondayRow).getByRole('button', { name: 'Unskip' }));
+    expect(await within(mondayRow).findByText('0 of 3')).toBeInTheDocument();
+    expect(await db.daySkips.get(monday)).toBeUndefined();
+  });
+
+  // Post-M12 UX addition (feature 2): tap Swap on one day, then Swap on
+  // another, to swap which day's prescription they use for this week.
+  it('tap-to-pick Swap calls the API with both dates, then shows the pair as swapped', async () => {
+    const user = userEvent.setup();
+    const monday = weekBoundsFor(localDateKey()).start;
+    const mondayDate = parseDateKey(monday);
+    const tuesday = localDateKey(new Date(mondayDate.getFullYear(), mondayDate.getMonth(), mondayDate.getDate() + 1));
+    const programme: ProgrammeResponse = {
+      phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
+      day_templates: [
+        { id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] },
+        { id: 2, weekday: 2, name: 'Upper A', kind: 'lifting', slots: [] },
+      ],
+    };
+    await db.programmeCache.put({ id: 1, cachedAt: new Date().toISOString(), data: programme });
+    swapDaysMock.mockResolvedValue(undefined);
+    getDaySwapsMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ date_a: monday, date_b: tuesday }]);
+
+    renderWeekPlan();
+    await screen.findByText('Monday');
+    const mondayRow = screen.getByText('Monday').closest('li')!;
+    const tuesdayRow = screen.getByText('Tuesday').closest('li')!;
+
+    await user.click(within(mondayRow).getByRole('button', { name: 'Swap' }));
+    expect(await screen.findByText(/Tap another day to swap with Monday/)).toBeInTheDocument();
+
+    await user.click(within(tuesdayRow).getByRole('button', { name: 'Swap' }));
+
+    expect(swapDaysMock).toHaveBeenCalledWith(monday, tuesday);
+    expect(await within(mondayRow).findByText(/Swapped with Tuesday/)).toBeInTheDocument();
+    expect(within(tuesdayRow).getByText(/Swapped with Monday/)).toBeInTheDocument();
+  });
+
+  it('tapping the picked day again cancels the swap pick without calling the API', async () => {
+    const user = userEvent.setup();
+    const programme: ProgrammeResponse = {
+      phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
+      day_templates: [{ id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] }],
+    };
+    await db.programmeCache.put({ id: 1, cachedAt: new Date().toISOString(), data: programme });
+
+    renderWeekPlan();
+    await screen.findByText('Monday');
+    const mondayRow = screen.getByText('Monday').closest('li')!;
+
+    await user.click(within(mondayRow).getByRole('button', { name: 'Swap' }));
+    await screen.findByRole('button', { name: 'Cancel swap' });
+    await user.click(within(mondayRow).getByRole('button', { name: 'Cancel swap' }));
+
+    expect(screen.queryByText(/Tap another day to swap with/)).not.toBeInTheDocument();
+    expect(swapDaysMock).not.toHaveBeenCalled();
+  });
+
+  it('shows a message when the server refuses a swap because a day already has a session', async () => {
+    const user = userEvent.setup();
+    const programme: ProgrammeResponse = {
+      phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
+      day_templates: [
+        { id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] },
+        { id: 2, weekday: 2, name: 'Upper A', kind: 'lifting', slots: [] },
+      ],
+    };
+    await db.programmeCache.put({ id: 1, cachedAt: new Date().toISOString(), data: programme });
+    const { ApiError } = await import('../lib/api');
+    swapDaysMock.mockRejectedValue(new ApiError(409, 'already started'));
+
+    renderWeekPlan();
+    await screen.findByText('Monday');
+    const mondayRow = screen.getByText('Monday').closest('li')!;
+    const tuesdayRow = screen.getByText('Tuesday').closest('li')!;
+
+    await user.click(within(mondayRow).getByRole('button', { name: 'Swap' }));
+    await user.click(within(tuesdayRow).getByRole('button', { name: 'Swap' }));
+
+    expect(await screen.findByText(/already been started/i)).toBeInTheDocument();
   });
 });

@@ -3,15 +3,18 @@ import { db } from './db';
 import {
   clearCardioLog,
   clearMobilityLog,
+  clearSkipDay,
   confirmDayDone,
   getCardioLog,
   getDayConfirmation,
   getMobilityLog,
   getProteinLog,
+  getSkipLog,
   getStepsLog,
   logCardio,
   logMobility,
   logProteinGrams,
+  logSkipDay,
   logSteps,
 } from './dailyLogs';
 
@@ -21,6 +24,7 @@ afterEach(async () => {
   await db.cardioLogs.clear();
   await db.stepsLogs.clear();
   await db.dayConfirmations.clear();
+  await db.daySkips.clear();
   await db.outbox.clear();
 });
 
@@ -167,5 +171,37 @@ describe('day confirmation', () => {
   it('does not conflate two different dates', async () => {
     await confirmDayDone('2026-01-05');
     expect(await getDayConfirmation('2026-01-06')).toBeUndefined();
+  });
+});
+
+// Post-M12 UX addition: skip a day — a real, distinct, synced state, unlike
+// dayConfirmations above (see src/lib/types.ts#DaySkip).
+describe('skip a day', () => {
+  it('is absent until skipped', async () => {
+    expect(await getSkipLog('2026-01-05')).toBeUndefined();
+  });
+
+  it('records the date and queues a synced outbox entry', async () => {
+    await logSkipDay('2026-01-05');
+    expect(await getSkipLog('2026-01-05')).toEqual({ date: '2026-01-05' });
+
+    const outboxRows = await db.outbox.where({ entity: 'day_skip', entity_id: '2026-01-05' }).toArray();
+    expect(outboxRows).toHaveLength(1);
+    expect(JSON.parse(outboxRows[0].payload)).toEqual({ date: '2026-01-05', skipped: true });
+  });
+
+  it('clearing removes the local row and queues an unskip outbox entry', async () => {
+    await logSkipDay('2026-01-05');
+    await clearSkipDay('2026-01-05');
+    expect(await getSkipLog('2026-01-05')).toBeUndefined();
+
+    const outboxRows = await db.outbox.where({ entity: 'day_skip', entity_id: '2026-01-05' }).toArray();
+    expect(outboxRows).toHaveLength(2); // the skip, then the unskip — both queued for sync
+    expect(JSON.parse(outboxRows[1].payload)).toEqual({ date: '2026-01-05', skipped: false });
+  });
+
+  it('does not conflate two different dates', async () => {
+    await logSkipDay('2026-01-05');
+    expect(await getSkipLog('2026-01-06')).toBeUndefined();
   });
 });

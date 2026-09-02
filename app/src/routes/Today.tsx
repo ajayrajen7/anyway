@@ -28,15 +28,18 @@ import { ApiError, getToday } from '../lib/api';
 import {
   clearCardioLog,
   clearMobilityLog,
+  clearSkipDay,
   confirmDayDone,
   getCardioLog,
   getDayConfirmation,
   getMobilityLog,
   getProteinLog,
+  getSkipLog,
   getStepsLog,
   logCardio,
   logMobility,
   logProteinGrams,
+  logSkipDay,
   logSteps,
 } from '../lib/dailyLogs';
 import { localDateKey } from '../lib/date';
@@ -95,6 +98,13 @@ export default function Today() {
 function TodayCard({ data }: { data: TodayResponse }) {
   const { day_template: dayTemplate, weekday, session, slots, date } = data;
   const weekdayName = WEEKDAY_NAMES[weekday] ?? dayTemplate.name;
+  // A day swap (post-M12 UX addition) means the *content* shown today
+  // belongs to a different weekday than the calendar one — configWeekday
+  // drives weekday-indexed display info (session-length estimate, cardio
+  // modality/duration) so it matches what's actually being shown, while
+  // `weekday`/`weekdayName` (the real calendar day) still drives the
+  // header. See server/internal/dayplan, src/lib/types.ts#TodayResponse.
+  const configWeekday = data.effective_weekday ?? weekday;
   // Keyed by date: a fresh calendar day means fresh "done" state, not
   // whatever the previous day's collapse happened to be.
   return (
@@ -102,7 +112,7 @@ function TodayCard({ data }: { data: TodayResponse }) {
       key={date}
       kind={dayTemplate.kind}
       date={date}
-      weekday={weekday}
+      configWeekday={configWeekday}
       weekdayName={weekdayName}
       session={session}
       slotCount={slots.length}
@@ -113,20 +123,25 @@ function TodayCard({ data }: { data: TodayResponse }) {
 function DayBody({
   kind,
   date,
-  weekday,
+  configWeekday,
   weekdayName,
   session,
   slotCount,
 }: {
   kind: DayKind;
   date: string;
-  weekday: number;
+  configWeekday: number;
   weekdayName: string;
   session: TodayResponse['session'];
   slotCount: number;
 }) {
-  const config = CARDIO_CONFIG[weekday];
+  const config = CARDIO_CONFIG[configWeekday];
   const [signals, setSignals] = useState<{ mainActivityDone: boolean; proteinLogged: boolean; stepsLogged: boolean } | undefined>(undefined);
+  // Whether this date has been explicitly skipped (post-M12 UX addition) —
+  // a distinct, persisted, synced fact, separate from `confirmed`
+  // ("Done for today" was tapped) below. Mutually exclusive in what they
+  // render, but stored independently — see src/lib/dailyLogs.ts#logSkipDay.
+  const [skipped, setSkipped] = useState(false);
   // Whether the "Done for today" button has actually been tapped for this
   // date — a persisted fact of its own (src/lib/types.ts#DayConfirmation),
   // deliberately separate from `signals`/`dayDone` below. All 3 fields being
@@ -151,7 +166,8 @@ function DayBody({
       kind === 'cardio_mobility' && config ? getCardioLog(date, config.modality) : Promise.resolve(undefined),
       kind === 'cardio_mobility' ? getMobilityLog(date) : Promise.resolve(undefined),
       getDayConfirmation(date),
-    ]).then(([protein, steps, cardio, mobility, confirmation]) => {
+      getSkipLog(date),
+    ]).then(([protein, steps, cardio, mobility, confirmation, skip]) => {
       const mainActivityDone =
         kind === 'lifting' ? session?.status === 'completed' : kind === 'cardio_mobility' ? (!config || !!cardio) && !!mobility : false;
       // Any logged gram value counts, not only once it reaches the 120g
@@ -159,6 +175,7 @@ function DayBody({
       // `proteinLogged` for the full reasoning.
       setSignals({ mainActivityDone, proteinLogged: !!protein, stepsLogged: !!steps });
       setConfirmed(!!confirmation);
+      setSkipped(!!skip);
     });
   }, [date, kind, config, session]);
 
@@ -175,8 +192,38 @@ function DayBody({
 
   async function handleConfirm() {
     await confirmDayDone(date);
+    if (skipped) await clearSkipDay(date); // "Done for today" supersedes an earlier skip
     setConfirmed(true);
+    setSkipped(false);
     setForceExpanded(false); // collapse immediately on tap, not just next mount
+  }
+
+  async function handleSkip() {
+    await logSkipDay(date);
+    setSkipped(true);
+    setForceExpanded(false);
+  }
+
+  async function handleUnskip() {
+    await clearSkipDay(date);
+    setSkipped(false);
+  }
+
+  // Checked before the "done" collapse below: skip and done are mutually
+  // exclusive states (each clears the other — see handleConfirm/handleSkip),
+  // so at most one of these two collapsed views is ever reachable at a time.
+  if (skipped && !forceExpanded) {
+    return (
+      <div className="flex flex-col gap-3">
+        <h1 className="text-2xl font-semibold">{weekdayName}</h1>
+        <Card className="flex items-center justify-between">
+          <Pill>⏭ Skipped</Pill>
+          <button type="button" onClick={() => setForceExpanded(true)} className="text-sm text-accent underline">
+            Edit
+          </button>
+        </Card>
+      </div>
+    );
   }
 
   if (dayDone && confirmed && !forceExpanded) {
@@ -203,6 +250,20 @@ function DayBody({
     </PrimaryButton>
   );
 
+  // A "Skip day" affordance, always available in the expanded layout
+  // regardless of day kind (prd.md has no lifting-only framing for this —
+  // owner: skip from Today "as well as" Week Plan, for any day). Reached
+  // via Edit if the day was already skipped, so it doubles as "Unskip".
+  const skipButton = skipped ? (
+    <button type="button" onClick={handleUnskip} className="text-center text-sm text-ink-muted underline">
+      Unskip this day
+    </button>
+  ) : (
+    <button type="button" onClick={handleSkip} className="text-center text-sm text-ink-muted underline">
+      Skip this day
+    </button>
+  );
+
   if (kind === 'rest') {
     return (
       <div className="flex flex-col gap-3">
@@ -211,6 +272,7 @@ function DayBody({
         <StepsRow date={date} onChange={refresh} />
         <ProteinRow date={date} onChange={refresh} />
         {doneButton}
+        {skipButton}
       </div>
     );
   }
@@ -219,16 +281,17 @@ function DayBody({
     return (
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-semibold">{weekdayName}</h1>
-        <CardioMobilityRows date={date} weekday={weekday} onChange={refresh} />
+        <CardioMobilityRows date={date} weekday={configWeekday} onChange={refresh} />
         <StepsRow date={date} onChange={refresh} />
         <ProteinRow date={date} onChange={refresh} />
         {doneButton}
+        {skipButton}
       </div>
     );
   }
 
   // lifting day
-  const minutes = SESSION_MINUTES[weekday];
+  const minutes = SESSION_MINUTES[configWeekday];
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-2xl font-semibold">{weekdayName}</h1>
@@ -256,6 +319,7 @@ function DayBody({
       <StepsRow date={date} onChange={refresh} />
       <ProteinRow date={date} onChange={refresh} />
       {doneButton}
+      {skipButton}
     </div>
   );
 }

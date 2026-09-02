@@ -13,6 +13,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/ajayrajen7/anyway/server/internal/dayplan"
 )
 
 // ISOWeekday maps a date to 1=Monday..7=Sunday (architecture.md §B3's
@@ -66,8 +68,17 @@ type Session struct {
 
 type Response struct {
 	Date        string          `json:"date"`
-	Weekday     int             `json:"weekday"`
+	Weekday     int             `json:"weekday"` // date's own calendar weekday — always this, regardless of a swap; drives the header ("Wednesday")
 	DayTemplate DayTemplateInfo `json:"day_template"`
+	// EffectiveWeekday is set only when a day swap (server/internal/dayplan)
+	// is in effect for this date — the weekday whose content is actually
+	// being shown (DayTemplate/Slots come from *that* weekday's template).
+	// nil in the (overwhelmingly common) unswapped case, so existing
+	// clients/tests that never look at it see no change. The frontend uses
+	// it (falling back to Weekday) for weekday-indexed display info
+	// (src/lib/dayInfo.ts's SESSION_MINUTES/CARDIO_CONFIG) so a swapped
+	// Wednesday shows Tuesday's duration estimate, not Wednesday's own.
+	EffectiveWeekday *int `json:"effective_weekday,omitempty"`
 	// Session and Slots are only populated for a "lifting" day_template.
 	// Cardio/mobility and rest days are logged through separate tables
 	// (cardio_logs, mobility_logs) — see prd.md §A3.6 — and carry no
@@ -107,7 +118,25 @@ func Get(ctx context.Context, conn *sql.DB, date string) (*Response, error) {
 	}
 
 	weekday := ISOWeekday(parsed)
-	dt, err := dayTemplateFor(ctx, conn, phaseID, weekday)
+	effectiveWeekday := weekday
+
+	// A day swap (post-M12 UX addition — server/internal/dayplan) means
+	// `date` should show its swap partner's weekday content instead of its
+	// own — "do Tuesday's workout on Wednesday." This resolves purely from
+	// (date, its partner's weekday); it never looks at what yesterday or
+	// last week did, same "missed days do not reschedule" spirit as the
+	// rest of this function.
+	if partner, ok, err := dayplan.Get(ctx, conn, date); err != nil {
+		return nil, fmt.Errorf("check day swap: %w", err)
+	} else if ok {
+		partnerParsed, perr := time.Parse("2006-01-02", partner)
+		if perr != nil {
+			return nil, fmt.Errorf("day_swaps.swapped_with %q for %s is not a valid date: %w", partner, date, perr)
+		}
+		effectiveWeekday = ISOWeekday(partnerParsed)
+	}
+
+	dt, err := dayTemplateFor(ctx, conn, phaseID, effectiveWeekday)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +146,10 @@ func Get(ctx context.Context, conn *sql.DB, date string) (*Response, error) {
 		Weekday:     weekday,
 		DayTemplate: dt,
 		Slots:       []Slot{},
+	}
+	if effectiveWeekday != weekday {
+		ew := effectiveWeekday
+		resp.EffectiveWeekday = &ew
 	}
 
 	if dt.Kind != "lifting" {
@@ -211,7 +244,7 @@ func slotsFor(ctx context.Context, conn *sql.DB, dayTemplateID int64) ([]Slot, e
 		       e.id, e.slug, e.name, e.unilateral, e.increment_kg
 		FROM slots s
 		JOIN exercises e ON e.id = s.exercise_id
-		WHERE s.day_template_id = ?
+		WHERE s.day_template_id = ? AND s.active = 1
 		ORDER BY s.position
 	`, dayTemplateID)
 	if err != nil {

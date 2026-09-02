@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/ajayrajen7/anyway/server/internal/dayplan"
 	"github.com/ajayrajen7/anyway/server/internal/export"
 	"github.com/ajayrajen7/anyway/server/internal/phase"
 	"github.com/ajayrajen7/anyway/server/internal/seed"
@@ -94,6 +95,14 @@ func NewRouter(conn *sql.DB, token string, gen exerciseGenerator) chi.Router {
 		// to). Added here in M9 alongside the rest of the sync surface.
 		r.Post("/mobility", postMobility(conn))
 		r.Post("/cardio", postCardio(conn))
+		// Post-M12 UX addition: "skip this day," a real distinct state — see
+		// server/internal/sync#DaySkip and memory.md.
+		r.Post("/day-skip", postDaySkip(conn))
+		// Post-M12 UX addition: swap which day's prescription two dates use
+		// this week — see server/internal/dayplan and memory.md.
+		r.Post("/day-swaps", postDaySwap(conn))
+		r.Delete("/day-swaps/{date}", deleteDaySwap(conn))
+		r.Get("/day-swaps", getDaySwaps(conn))
 		// Still a stub: its M8 precondition (server-side "actual" data
 		// existing) is technically satisfied now that /api/sync writes
 		// logged_sets/morning_checks, but the Week View already computes
@@ -431,6 +440,75 @@ func postSteps(conn *sql.DB) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func postDaySkip(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var p syncpkg.DaySkipPayload
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			writeJSONError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := syncpkg.DaySkip(r.Context(), conn, p); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// postDaySwap implements POST /api/day-swaps — body {"date_a":"...","date_b":"..."}.
+// 409 (not 400/500) when either date already has a session — a real,
+// expected refusal (see dayplan.ErrAlreadyStarted's own doc), not a bug.
+func postDaySwap(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			DateA string `json:"date_a"`
+			DateB string `json:"date_b"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := dayplan.Swap(r.Context(), conn, body.DateA, body.DateB); err != nil {
+			if errors.Is(err, dayplan.ErrAlreadyStarted) {
+				writeJSONError(w, http.StatusConflict, err)
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// deleteDaySwap implements DELETE /api/day-swaps/:date — un-swaps date (and
+// its partner). A no-op, not an error, if date isn't currently swapped.
+func deleteDaySwap(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		date := chi.URLParam(r, "date")
+		if err := dayplan.Unswap(r.Context(), conn, date); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// getDaySwaps implements GET /api/day-swaps?start=&end= — every swap pair
+// touching that date range, so Week Plan can render "swapped with <day>"
+// tags across whichever week it's showing.
+func getDaySwaps(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := r.URL.Query().Get("start")
+		end := r.URL.Query().Get("end")
+		pairs, err := dayplan.ListInRange(r.Context(), conn, start, end)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"pairs": pairs})
 	}
 }
 

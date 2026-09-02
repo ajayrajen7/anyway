@@ -98,3 +98,32 @@ export async function getSessionSets(sessionId: number): Promise<LoggedSet[]> {
   const raw = await apiFetch<unknown>(`/api/sessions/${sessionId}/sets`);
   return SessionSetsResponse.parse(raw).sets;
 }
+
+// --- Day swaps (post-M12 UX addition: "do Tuesday's workout on Wednesday") ---
+// Online-only, deliberately: this changes which day_template a *future*
+// GET /api/today resolves for a date, so there's nothing meaningful to do
+// with it offline — unlike the session runner, Week Plan already requires a
+// connection to fetch the programme it's built on. See server/internal/dayplan.
+
+export interface DaySwapPair {
+  date_a: string;
+  date_b: string;
+}
+
+// POST /api/day-swaps — throws ApiError(409) if either date already has a
+// session (server/internal/dayplan.ErrAlreadyStarted): swapping is only
+// safe before either date has been opened as Today.
+export async function swapDays(dateA: string, dateB: string): Promise<void> {
+  await apiFetch<void>('/api/day-swaps', { method: 'POST', body: JSON.stringify({ date_a: dateA, date_b: dateB }) });
+}
+
+export async function unswapDay(date: string): Promise<void> {
+  await apiFetch<void>(`/api/day-swaps/${encodeURIComponent(date)}`, { method: 'DELETE' });
+}
+
+const DaySwapsResponse = z.object({ pairs: z.object({ date_a: z.string(), date_b: z.string() }).array() });
+
+export async function getDaySwaps(start: string, end: string): Promise<DaySwapPair[]> {
+  const raw = await apiFetch<unknown>(`/api/day-swaps?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+  return DaySwapsResponse.parse(raw).pairs;
+}

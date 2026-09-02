@@ -16,6 +16,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Card, Pill } from '../components/ui';
 import { db } from '../lib/db';
 import { isoWeekday } from '../lib/date';
+import { getCachedDaySwap } from '../lib/daySwapCache';
 import { CARDIO_CONFIG, SESSION_MINUTES, WEEKDAY_NAMES } from '../lib/dayInfo';
 import { MOBILITY_ITEMS } from '../lib/mobilityItems';
 import { getCachedProgramme } from '../lib/programmeCache';
@@ -24,7 +25,7 @@ import type { Exercise, ProgrammeDayTemplate } from '../lib/types';
 type State =
   | { status: 'loading' }
   | { status: 'no-programme' }
-  | { status: 'ready'; template: ProgrammeDayTemplate | undefined; exercisesById: Map<number, Exercise> };
+  | { status: 'ready'; template: ProgrammeDayTemplate | undefined; exercisesById: Map<number, Exercise>; configWeekday: number };
 
 export default function DayPreview() {
   const { date } = useParams<{ date: string }>();
@@ -40,10 +41,17 @@ export default function DayPreview() {
         return;
       }
       const weekday = isoWeekday(date!);
-      const template = programme.data.day_templates.find((t) => t.weekday === weekday);
+      // Honor a day swap (post-M12 UX addition) offline, from whatever Week
+      // Plan last cached for this date — see src/lib/daySwapCache.ts. A
+      // swap this preview doesn't yet know about (never viewed on this
+      // device since it was made) just falls back to the natural weekday,
+      // same accepted tradeoff as the rest of this screen's own doc comment.
+      const swap = await getCachedDaySwap(date!);
+      const configWeekday = swap ? isoWeekday(swap.swapped_with) : weekday;
+      const template = programme.data.day_templates.find((t) => t.weekday === configWeekday);
       const exercisesArr = await db.exercises.toArray();
       if (!cancelled) {
-        setState({ status: 'ready', template, exercisesById: new Map(exercisesArr.map((e) => [e.id, e])) });
+        setState({ status: 'ready', template, exercisesById: new Map(exercisesArr.map((e) => [e.id, e])), configWeekday });
       }
     })();
     return () => {
@@ -81,8 +89,10 @@ export default function DayPreview() {
         <Pill>Preview</Pill>
       </div>
 
-      {kind === 'lifting' && <LiftingPreview template={state.template} exercisesById={state.exercisesById} minutes={SESSION_MINUTES[weekday]} />}
-      {kind === 'cardio_mobility' && <CardioMobilityPreview weekday={weekday} />}
+      {kind === 'lifting' && (
+        <LiftingPreview template={state.template} exercisesById={state.exercisesById} minutes={SESSION_MINUTES[state.configWeekday]} />
+      )}
+      {kind === 'cardio_mobility' && <CardioMobilityPreview weekday={state.configWeekday} />}
       {kind === 'rest' && <p className="mt-4 text-sm text-ink-muted">Flat walk only. Not training — just movement.</p>}
     </main>
   );

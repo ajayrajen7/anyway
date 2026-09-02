@@ -179,6 +179,32 @@ describe('computeDayCompletion', () => {
     const result = computeDayCompletion('2026-01-11', 'rest', { mainActivityDone: false, proteinLogged: true, stepsLogged: true });
     expect(result).toEqual({ date: '2026-01-11', kind: 'rest', done: 2, total: 2, color: 'green' });
   });
+
+  // Post-M12 UX addition: skip is a real, distinct state.
+  it('a skipped day is color "skipped" regardless of what else was logged', () => {
+    const result = computeDayCompletion('2026-01-05', 'lifting', {
+      mainActivityDone: false,
+      proteinLogged: false,
+      stepsLogged: false,
+      skipped: true,
+    });
+    expect(result.color).toBe('skipped');
+  });
+
+  it('a skip overrides an otherwise-green day\'s color, but leaves the raw done/total counts alone', () => {
+    const result = computeDayCompletion('2026-01-05', 'lifting', {
+      mainActivityDone: true,
+      proteinLogged: true,
+      stepsLogged: true,
+      skipped: true,
+    });
+    expect(result).toEqual({ date: '2026-01-05', kind: 'lifting', done: 3, total: 3, color: 'skipped' });
+  });
+
+  it('an unskipped day (the default) grades normally', () => {
+    const result = computeDayCompletion('2026-01-05', 'lifting', { mainActivityDone: true, proteinLogged: true, stepsLogged: true });
+    expect(result.color).toBe('green');
+  });
 });
 
 describe('round1', () => {

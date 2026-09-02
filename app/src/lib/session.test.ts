@@ -6,6 +6,7 @@ import {
   computeSlotStatus,
   isSwipeLeft,
   prefillFor,
+  removedSlotIdsFrom,
   SWIPE_SKIP_THRESHOLD_PX,
   type RunnerSlot,
 } from './session';
@@ -223,5 +224,21 @@ describe('computeSlotStatus', () => {
   it('is done once every set is resolved, done or skipped', () => {
     const sets = [set({ set_index: 1, status: 'done' }), set({ set_index: 2, status: 'skipped' }), set({ set_index: 3, status: 'done' })];
     expect(computeSlotStatus(sets, 3)).toBe('done');
+  });
+});
+
+// Post-M12 feature 4 ("this week's actual plan becomes next week's base"):
+// tells the server which of a session's deletions were real slots.
+describe('removedSlotIdsFrom', () => {
+  it('extracts the numeric id from real slot- keys', () => {
+    expect(removedSlotIdsFrom({ removed: ['slot-7', 'slot-12'] })).toEqual([7, 12]);
+  });
+
+  it('drops added- keys — a session-added exercise was never a real slot', () => {
+    expect(removedSlotIdsFrom({ removed: ['slot-7', 'added-uuid-1'] })).toEqual([7]);
+  });
+
+  it('is empty for nothing removed', () => {
+    expect(removedSlotIdsFrom({ removed: [] })).toEqual([]);
   });
 });

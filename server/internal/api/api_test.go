@@ -336,6 +336,95 @@ func TestPostSyncDrainsABatchAndReportsPerEntry(t *testing.T) {
 	}
 }
 
+func TestPostDaySkipWrites(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	router := api.NewRouter(conn, "secret", nil)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/day-skip", map[string]any{"date": "2026-01-06", "skipped": true})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM day_skips WHERE date = '2026-01-06'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("expected a day_skips row, count=%d err=%v", n, err)
+	}
+}
+
+func TestDaySwapRoutesCreateListAndDelete(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	router := api.NewRouter(conn, "secret", nil)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/day-swaps", map[string]any{"date_a": "2026-01-06", "date_b": "2026-01-07"})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/day-swaps?start=2026-01-05&end=2026-01-11", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Pairs []struct {
+			DateA string `json:"date_a"`
+			DateB string `json:"date_b"`
+		} `json:"pairs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Pairs) != 1 || body.Pairs[0].DateA != "2026-01-06" || body.Pairs[0].DateB != "2026-01-07" {
+		t.Fatalf("unexpected pairs: %+v", body.Pairs)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/day-swaps/2026-01-06", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/day-swaps?start=2026-01-05&end=2026-01-11", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	body.Pairs = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Pairs) != 0 {
+		t.Fatalf("expected no pairs after delete, got %+v", body.Pairs)
+	}
+}
+
+func TestPostDaySwapRefusesADateWithAnExistingSession(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.Exec(`INSERT INTO sessions (date, status) VALUES ('2026-01-06', 'planned')`); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	router := api.NewRouter(conn, "secret", nil)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/day-swaps", map[string]any{"date_a": "2026-01-06", "date_b": "2026-01-07"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCorsPreflightIsAnsweredWithoutAuth(t *testing.T) {
 	conn, err := db.Open(":memory:")
 	if err != nil {
