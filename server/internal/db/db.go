@@ -36,7 +36,18 @@ func Open(path string) (*sql.DB, error) {
 		}
 	}
 
-	conn, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
+	// busy_timeout(5000): Railway (and most rolling-deploy PaaS hosts)
+	// starts the *new* container before the *old* one has fully stopped, to
+	// avoid downtime — both briefly hold the same SQLite file open on the
+	// same persistent volume. Without a busy timeout, a lock held by the
+	// still-shutting-down old container makes the new container's very
+	// first query (a migration) fail immediately with SQLITE_BUSY, which
+	// main.go treats as fatal — a real "Deploy Crashed" notification for a
+	// deploy that then succeeds on Railway's automatic restart a moment
+	// later (reported live: every deploy alerted, the app always ended up
+	// fine). 5s retries through that overlap instead of failing on it —
+	// see memory.md.
+	conn, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}

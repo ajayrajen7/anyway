@@ -101,3 +101,28 @@ func TestOpenIsIdempotentOnARealFileAcrossRestarts(t *testing.T) {
 		t.Fatalf("client_uuid column missing after restart: %v", err)
 	}
 }
+
+// Real bug, reported live: a Railway "Deploy Crashed" email on effectively
+// every deploy, even though the deploy always ended up healthy. Root cause:
+// a rolling deploy briefly runs the old and new containers together, both
+// against the same SQLite file on the same persistent volume — without a
+// busy timeout, the new container's very first query (a migration) could
+// hit SQLITE_BUSY from the old container's own lock and fail immediately,
+// which main.go treats as fatal. A silently-ignored or malformed pragma
+// would be worse than no fix at all, so this asserts the pragma actually
+// took effect, not just that Open didn't error.
+func TestOpenSetsABusyTimeoutToSurviveARollingDeployOverlap(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+
+	var ms int
+	if err := conn.QueryRow(`PRAGMA busy_timeout`).Scan(&ms); err != nil {
+		t.Fatalf("query busy_timeout: %v", err)
+	}
+	if ms == 0 {
+		t.Fatal("expected a non-zero busy_timeout — a rolling-deploy lock overlap would fail instantly instead of retrying")
+	}
+}
