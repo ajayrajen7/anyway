@@ -47,6 +47,7 @@ import { CARDIO_CONFIG, SESSION_MINUTES, WEEKDAY_NAMES } from '../lib/dayInfo';
 import { cacheExerciseLibrary } from '../lib/exerciseCache';
 import { MOBILITY_ITEMS } from '../lib/mobilityItems';
 import { cacheProgramme } from '../lib/programmeCache';
+import { runSync } from '../lib/sync';
 import { cacheToday } from '../lib/todayCache';
 import { computeDayCompletion, type DayKind } from '../lib/week';
 import type { TodayResponse } from '../lib/types';
@@ -61,7 +62,19 @@ export default function Today() {
 
   useEffect(() => {
     let cancelled = false;
-    getToday(localDateKey())
+    // Real bug, reported live: the sync worker (src/lib/sync.ts) only ever
+    // fires on a hard page load or a browser 'online' event (see main.tsx)
+    // — never on an in-app route change. Finish a session, get routed back
+    // here by React Router (no reload), and this screen would ask the
+    // server "is this done?" before anything had told the server about the
+    // completion sitting in the local outbox — showing "Start session"
+    // again for a session that was, from the device's own point of view,
+    // already finished. Give the outbox a chance to drain (best-effort,
+    // never throws) before asking the server anything, every time this
+    // screen is opened, not just on first load.
+    runSync()
+      .catch(() => {})
+      .then(() => getToday(localDateKey()))
       .then(async (data) => {
         await cacheToday(data); // so the session runner can run with no signal
         // Best-effort, non-blocking: refresh the offline exercise-search

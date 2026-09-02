@@ -1,16 +1,16 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../lib/api';
 import { db } from '../lib/db';
 import type { TodayResponse } from '../lib/types';
 import Today from './Today';
 
-const { getTodayMock } = vi.hoisted(() => ({ getTodayMock: vi.fn() }));
+const { getTodayMock, postSyncMock } = vi.hoisted(() => ({ getTodayMock: vi.fn(), postSyncMock: vi.fn() }));
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
-  return { ...actual, getToday: getTodayMock };
+  return { ...actual, getToday: getTodayMock, postSync: postSyncMock };
 });
 // cacheExerciseLibrary/cacheProgramme would otherwise attempt a real fetch — stub them out.
 vi.mock('../lib/exerciseCache', () => ({ cacheExerciseLibrary: vi.fn().mockResolvedValue(undefined) }));
@@ -24,8 +24,13 @@ function renderToday() {
   );
 }
 
+beforeEach(() => {
+  postSyncMock.mockResolvedValue([]);
+});
+
 afterEach(async () => {
   getTodayMock.mockReset();
+  postSyncMock.mockReset();
   await db.todayCache.clear();
   await db.proteinLogs.clear();
   await db.mobilityLogs.clear();
@@ -473,5 +478,39 @@ describe('Today screen', () => {
     await user.click(await screen.findByRole('button', { name: 'View' }));
     expect(screen.getByText('Knee-to-wall dorsiflexion')).toBeInTheDocument();
     expect(screen.getAllByRole('checkbox')).toHaveLength(2 + 12); // cross-trainer + full-mobility + 12 item ticks
+  });
+
+  // Real bug, reported live: sync.ts's runSync only ever fired on a hard
+  // page load or the browser's 'online' event — never on an in-app route
+  // change. Finish a session, get routed back to Today by React Router (no
+  // reload), and Today would ask the server "is this done?" before
+  // anything had told the server about the completion sitting in the local
+  // outbox — showing "Start session" again for a session already finished
+  // from the device's own point of view.
+  it('drains the outbox before asking the server for today, so a just-synced completion is reflected immediately', async () => {
+    await db.outbox.add({
+      entity: 'session_complete',
+      entity_id: '42',
+      payload: JSON.stringify({ session_id: 42 }),
+      created_at: new Date().toISOString(),
+      synced_at: null,
+    });
+    const callOrder: string[] = [];
+    postSyncMock.mockImplementation(async () => {
+      callOrder.push('sync');
+      return [{ entity: 'session_complete', entity_id: '42', ok: true }];
+    });
+    getTodayMock.mockImplementation(async () => {
+      callOrder.push('getToday');
+      return liftingDay;
+    });
+
+    renderToday();
+    await screen.findByRole('heading', { name: 'Monday' });
+
+    expect(callOrder).toEqual(['sync', 'getToday']); // the drain happens first, not after
+    expect(postSyncMock).toHaveBeenCalledTimes(1);
+    const outboxEntry = await db.outbox.where({ entity: 'session_complete', entity_id: '42' }).first();
+    expect(outboxEntry?.synced_at).not.toBeNull(); // the pending entry actually got marked synced
   });
 });

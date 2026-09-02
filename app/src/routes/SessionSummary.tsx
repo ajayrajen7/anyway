@@ -8,6 +8,7 @@ import { Card, primaryButtonClass } from '../components/ui';
 import { completeSession, hydrateSessionFromServer, loggedSetsForSession } from '../lib/outbox';
 import { getOverlay } from '../lib/overlay';
 import { computeSessionTotals, removedSlotIdsFrom, type SessionTotals } from '../lib/session';
+import { runSync } from '../lib/sync';
 
 export default function SessionSummary() {
   const { id } = useParams<{ id: string }>();
@@ -17,7 +18,14 @@ export default function SessionSummary() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([loggedSetsForSession(sessionId), getOverlay(sessionId)]).then(([sets, overlay]) => {
-      completeSession(sessionId, removedSlotIdsFrom(overlay));
+      completeSession(sessionId, removedSlotIdsFrom(overlay)).then(() => {
+        // Push the completion (and anything else pending) right away,
+        // rather than waiting for the next full app load or 'online' event
+        // — see Today.tsx's matching comment for the real bug this closes
+        // (a just-finished session still showing "Start session" back on
+        // Today, since nothing had told the server about it yet).
+        runSync();
+      });
       if (!cancelled) setTotals(computeSessionTotals(sets));
     });
     return () => {
