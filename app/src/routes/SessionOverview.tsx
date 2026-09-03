@@ -58,7 +58,10 @@ export default function SessionOverview() {
   if (cached === null) {
     return (
       <main className="mx-auto max-w-md p-4">
-        <p className="text-sm text-ink-muted">
+        <button type="button" onClick={() => navigate(-1)} className="text-sm text-ink-muted" aria-label="Back">
+          ← Back
+        </button>
+        <p className="mt-2 text-sm text-ink-muted">
           Session not available offline yet — open Today with a connection first.
         </p>
       </main>
@@ -90,7 +93,18 @@ export default function SessionOverview() {
 
   return (
     <main className="mx-auto max-w-md p-4">
-      <h1 className="text-2xl font-semibold">{cached.data.day_template.name}</h1>
+      {/* This screen (and the session flow generally) lives outside AppShell
+          — see App.tsx's route map — so there's no bottom nav to fall back
+          on. Real bug, reported live: reached from either Today or Week
+          Plan (both link straight to /session/:id), so a hardcoded
+          "← Today"/"← Week Plan" label would be wrong from the other
+          entry point — navigate(-1) (same mechanism DayPreview.tsx already
+          uses for its own back button) returns to whichever one it was. */}
+      <button type="button" onClick={() => navigate(-1)} className="text-sm text-ink-muted" aria-label="Back">
+        ← Back
+      </button>
+
+      <h1 className="mt-2 text-2xl font-semibold">{cached.data.day_template.name}</h1>
       <div className="mt-1 flex items-center gap-2">
         <p className="text-sm text-ink-muted">{slots.length} exercises</p>
         {isCompleted && <Pill tone="accent">✓ Session complete</Pill>}

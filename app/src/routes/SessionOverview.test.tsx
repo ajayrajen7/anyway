@@ -84,6 +84,27 @@ describe('SessionOverview', () => {
     expect(screen.getByRole('link', { name: 'Finish session →' })).toHaveAttribute('href', '/session/42/done');
   });
 
+  // Real bug, reported live: this screen sits outside AppShell (see
+  // App.tsx's route map) so there's no bottom nav to fall back on, and it
+  // had no back affordance of its own — tapping into it from either Today
+  // or Week Plan (both link straight here) left no in-app way out.
+  it('has a Back button that returns to wherever it was opened from', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot()]);
+    render(
+      <MemoryRouter initialEntries={['/week', '/session/42']} initialIndex={1}>
+        <Routes>
+          <Route path="/week" element={<div>Week Plan screen</div>} />
+          <Route path="/session/:id" element={<SessionOverview />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Lower A');
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByText('Week Plan screen')).toBeInTheDocument();
+  });
+
   // Real bug fixed here: the link showed "Finish session →" unconditionally,
   // even for a session already marked complete — reading as "it lets me
   // finish it again." Owner, diagnosing a separate bug: "there could be an
