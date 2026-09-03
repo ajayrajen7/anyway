@@ -459,8 +459,10 @@ func postDaySkip(conn *sql.DB) http.HandlerFunc {
 }
 
 // postDaySwap implements POST /api/day-swaps — body {"date_a":"...","date_b":"..."}.
-// 409 (not 400/500) when either date already has a session — a real,
-// expected refusal (see dayplan.ErrAlreadyStarted's own doc), not a bug.
+// 409 (not 400/500) when either date has an already-active session
+// (completed, or with logged sets) — a real, expected refusal (see
+// dayplan.ErrAlreadyStarted's own doc), not a bug. A bare, untouched
+// 'planned' stub (created merely by viewing the day) does not trigger this.
 func postDaySwap(conn *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

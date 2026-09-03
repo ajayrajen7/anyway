@@ -16,12 +16,21 @@ import (
 	"fmt"
 )
 
-// ErrAlreadyStarted means one of the two dates already has a `sessions` row.
+// ErrAlreadyStarted means one of the two dates has a `sessions` row with
+// actual activity on it — completed, or with at least one logged_sets row.
 // internal/today fixes a session's day_template_id at creation and never
 // revisits it (see its own "missed days do not reschedule" discipline) —
-// swapping after that point would leave an already-created session quietly
+// swapping after that point would leave an already-logged session quietly
 // pointing at the pre-swap content, which is worse than just refusing the
 // swap outright.
+//
+// Deliberately *not* triggered by a bare, untouched `sessions` row: internal/
+// today.Get creates one with status 'planned' the first time a lifting day
+// is merely viewed (ensureSession), which happens on every visit to Today —
+// including today's own date, unavoidably, before anything is logged. Keying
+// this off row-existence rather than actual activity would make today's own
+// day (and any lifting day already glanced at) permanently unswappable; see
+// memory.md for the session where this was found and fixed.
 var ErrAlreadyStarted = fmt.Errorf("one of these days already has a session — swap before opening it as Today")
 
 // execQueryer is satisfied by *sql.DB.
@@ -42,7 +51,15 @@ func Swap(ctx context.Context, conn execQueryer, dateA, dateB string) error {
 	}
 	for _, d := range [2]string{dateA, dateB} {
 		var n int
-		if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE date = ?`, d).Scan(&n); err != nil {
+		// A bare 'planned' session with nothing logged against it is just
+		// today.Get's lazy view-stub, not "started" — see ErrAlreadyStarted's
+		// doc. Only completed, or a session with at least one logged_sets
+		// row, actually blocks the swap.
+		if err := conn.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM sessions s
+			WHERE s.date = ?
+			  AND (s.status = 'completed' OR EXISTS (SELECT 1 FROM logged_sets ls WHERE ls.session_id = s.id))
+		`, d).Scan(&n); err != nil {
 			return fmt.Errorf("check existing session for %s: %w", d, err)
 		}
 		if n > 0 {

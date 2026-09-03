@@ -38,11 +38,56 @@ func TestSwapCreatesASymmetricPair(t *testing.T) {
 	}
 }
 
-func TestSwapRefusesADateWithAnExistingSession(t *testing.T) {
+func TestSwapAllowsADateWithOnlyAnUntouchedPlannedSession(t *testing.T) {
+	// today.Get's ensureSession creates a bare 'planned' row the moment a
+	// lifting day is merely viewed — including today's own date, on every
+	// visit to Today, before anything is logged. That must not block a swap,
+	// or today (and any lifting day already glanced at) becomes permanently
+	// unswappable. See ErrAlreadyStarted's doc.
 	conn := openTestDB(t)
 	ctx := context.Background()
 	if _, err := conn.Exec(`INSERT INTO sessions (date, status) VALUES ('2026-01-06', 'planned')`); err != nil {
 		t.Fatalf("seed session: %v", err)
+	}
+
+	if err := dayplan.Swap(ctx, conn, "2026-01-06", "2026-01-07"); err != nil {
+		t.Fatalf("expected swap to succeed, got %v", err)
+	}
+}
+
+func TestSwapRefusesADateWithACompletedSession(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := context.Background()
+	if _, err := conn.Exec(`INSERT INTO sessions (date, status) VALUES ('2026-01-06', 'completed')`); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	err := dayplan.Swap(ctx, conn, "2026-01-06", "2026-01-07")
+	if !errors.Is(err, dayplan.ErrAlreadyStarted) {
+		t.Fatalf("expected ErrAlreadyStarted, got %v", err)
+	}
+	if _, ok, _ := dayplan.Get(ctx, conn, "2026-01-07"); ok {
+		t.Fatal("a refused swap must not have written anything")
+	}
+}
+
+func TestSwapRefusesADateWithAtLeastOneLoggedSet(t *testing.T) {
+	conn := openTestDB(t)
+	ctx := context.Background()
+	if _, err := conn.Exec(`
+		INSERT INTO exercises (id, slug, name, equipment, pressure, impact)
+		VALUES (1, 'test-exercise', 'Test Exercise', 'bodyweight', 'low', 'none')
+	`); err != nil {
+		t.Fatalf("seed exercise: %v", err)
+	}
+	if _, err := conn.Exec(`INSERT INTO sessions (id, date, status) VALUES (1, '2026-01-06', 'planned')`); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	if _, err := conn.Exec(`
+		INSERT INTO logged_sets (session_id, exercise_id, set_index, status, provenance, logged_at)
+		VALUES (1, 1, 1, 'done', 'prescribed', '2026-01-06T09:00:00Z')
+	`); err != nil {
+		t.Fatalf("seed logged_set: %v", err)
 	}
 
 	err := dayplan.Swap(ctx, conn, "2026-01-06", "2026-01-07")

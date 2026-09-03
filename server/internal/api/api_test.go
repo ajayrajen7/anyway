@@ -414,7 +414,10 @@ func TestPostDaySwapRefusesADateWithAnExistingSession(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	if _, err := conn.Exec(`INSERT INTO sessions (date, status) VALUES ('2026-01-06', 'planned')`); err != nil {
+	// 'completed' — not a bare 'planned' stub — is what actually blocks a
+	// swap; see dayplan.ErrAlreadyStarted's doc for why a merely-viewed,
+	// untouched 'planned' session must not.
+	if _, err := conn.Exec(`INSERT INTO sessions (date, status) VALUES ('2026-01-06', 'completed')`); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
 	router := api.NewRouter(conn, "secret", nil)
@@ -422,6 +425,26 @@ func TestPostDaySwapRefusesADateWithAnExistingSession(t *testing.T) {
 	rec := doJSON(t, router, http.MethodPost, "/api/day-swaps", map[string]any{"date_a": "2026-01-06", "date_b": "2026-01-07"})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPostDaySwapAllowsADateWithOnlyAnUntouchedPlannedSession(t *testing.T) {
+	// Reproduces the reported bug: opening Today for a lifting day (today's
+	// own date, unavoidably) lazily creates a bare 'planned' session before
+	// anything is logged. That must not block swapping it.
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.Exec(`INSERT INTO sessions (date, status) VALUES ('2026-01-06', 'planned')`); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	router := api.NewRouter(conn, "secret", nil)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/day-swaps", map[string]any{"date_a": "2026-01-06", "date_b": "2026-01-07"})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
