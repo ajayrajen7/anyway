@@ -9,16 +9,24 @@
 // session screens' component language instead of a bare styled <ul>.
 //
 // Post-M12 UX additions (feature 1/2): a per-row Skip/Unskip action (a real,
-// distinct state — src/lib/dailyLogs.ts#logSkipDay) and a tap-to-pick Swap
-// action ("do Tuesday's workout on Wednesday" — server/internal/dayplan).
-// Tap Swap on one day, then Swap on another day in the same week to confirm;
-// tap the highlighted day again (or Swap once more) to cancel picking.
+// distinct state — src/lib/dailyLogs.ts#logSkipDay) and a Swap action
+// ("do Tuesday's workout on Wednesday" — server/internal/dayplan).
+//
+// Swap UX (redesigned after the owner reported the original tap-to-pick
+// flow — arm one row, then tap a second row elsewhere on the page — as
+// confusing): tapping "Swap" on a row opens a bottom sheet (SheetShell,
+// the same one Swap/Add-exercise use under the session runner) listing
+// every other day in the displayed week; tapping one of those shows a
+// one-line confirm step; Confirm commits it. Three taps, one focused
+// surface — same-week swap is by far the common case (a previous day,
+// if it was skipped, included — same list, no special-casing needed).
 // Swapping is online-only (it changes what a *future* GET /api/today
 // resolves — nothing meaningful to do with it offline) and refused by the
 // server if either day already has a session (dayplan.ErrAlreadyStarted).
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, StatusDot } from '../components/ui';
+import SheetShell from '../components/SheetShell';
+import { Card, PrimaryButton, SecondaryButton, StatusDot } from '../components/ui';
 import { ApiError, swapDays, unswapDay } from '../lib/api';
 import { db } from '../lib/db';
 import { localDateKey, parseDateKey } from '../lib/date';
@@ -44,6 +52,10 @@ interface DayRow extends DayCompletion {
 
 type State = { status: 'loading' } | { status: 'no-programme' } | { status: 'ready'; days: DayRow[] };
 
+// See the file header's Swap UX note. `from`/`to` are dates within the
+// currently displayed week.
+type SwapFlow = { step: 'closed' } | { step: 'choosing'; from: string } | { step: 'confirming'; from: string; to: string };
+
 // green/red map onto the shared StatusDot tones (accent = done, none =
 // nothing logged); yellow (partial) and skipped keep their own colors — a
 // four-state day grade doesn't fit the two-tone accent/muted vocabulary
@@ -66,9 +78,11 @@ export default function WeekPlan() {
 function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds; thisWeek: WeekBounds; onBoundsChange: (b: WeekBounds) => void }) {
   const [state, setState] = useState<State>({ status: 'loading' });
   const [refreshToken, setRefreshToken] = useState(0);
-  // The date currently selected as the swap source, mid tap-to-pick — see
-  // the file header. null = not picking.
-  const [picking, setPicking] = useState<string | null>(null);
+  // The swap sheet's own state machine — see the file header. 'closed': not
+  // open. 'choosing': sheet open, listing every other day to swap `from`
+  // with. 'confirming': a target day picked, showing the one-line confirm.
+  const [swapFlow, setSwapFlow] = useState<SwapFlow>({ step: 'closed' });
+  const [swapError, setSwapError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -171,23 +185,25 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
     refresh();
   }
 
-  async function handleSwapTap(date: string) {
-    setError(null);
-    if (picking === null) {
-      setPicking(date);
-      return;
-    }
-    if (picking === date) {
-      setPicking(null); // tapped the already-picked day again — cancel
-      return;
-    }
+  function openSwapPicker(date: string) {
+    setSwapError(null);
+    setSwapFlow({ step: 'choosing', from: date });
+  }
+
+  function pickSwapTarget(to: string) {
+    if (swapFlow.step === 'closed') return; // can't happen — the sheet that calls this only renders mid-flow
+    setSwapError(null);
+    setSwapFlow({ step: 'confirming', from: swapFlow.from, to });
+  }
+
+  async function confirmSwap() {
+    if (swapFlow.step !== 'confirming') return;
     try {
-      await swapDays(picking, date);
-      setPicking(null);
+      await swapDays(swapFlow.from, swapFlow.to);
+      setSwapFlow({ step: 'closed' });
       refresh();
     } catch (err: unknown) {
-      setPicking(null);
-      setError(err instanceof ApiError && err.status === 409 ? "Can't swap — one of these days has already been started." : "Couldn't swap those days.");
+      setSwapError(err instanceof ApiError && err.status === 409 ? "Can't swap — one of these days has already been started." : "Couldn't swap those days.");
     }
   }
 
@@ -236,7 +252,6 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
         </button>
       </div>
 
-      {picking && <p className="mt-3 text-xs text-accent">Tap another day to swap with {WEEKDAY_LABELS[dayIndex(picking, bounds)]}.</p>}
       {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
 
       {/* Every row links somewhere: the real session if one's already
@@ -274,12 +289,8 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
                       Swapped with {WEEKDAY_LABELS[dayIndex(day.swappedWith, bounds)] ?? day.swappedWith} — Undo
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleSwapTap(day.date)}
-                      className={picking === day.date ? 'text-accent underline' : 'text-ink-muted underline'}
-                    >
-                      {picking === day.date ? 'Cancel swap' : 'Swap'}
+                    <button type="button" onClick={() => openSwapPicker(day.date)} className="text-ink-muted underline">
+                      Swap
                     </button>
                   )}
                 </div>
@@ -292,8 +303,58 @@ function WeekPlanBody({ bounds, thisWeek, onBoundsChange }: { bounds: WeekBounds
       <Link to="/coverage" className="mt-4 block text-sm text-accent underline">
         View coverage →
       </Link>
+
+      {swapFlow.step !== 'closed' && (
+        <SheetShell onClose={() => setSwapFlow({ step: 'closed' })}>
+          {swapFlow.step === 'choosing' ? (
+            <>
+              <h2 className="text-sm text-ink-muted">Swap {WEEKDAY_LABELS[dayIndex(swapFlow.from, bounds)]} with:</h2>
+              <ul className="mt-3 flex flex-col gap-1">
+                {state.days
+                  .map((d, i) => ({ d, i }))
+                  .filter(({ d }) => d.date !== swapFlow.from)
+                  .map(({ d, i }) => (
+                    <li key={d.date}>
+                      <button
+                        type="button"
+                        onClick={() => pickSwapTarget(d.date)}
+                        className="flex w-full items-center justify-between rounded-md bg-surface px-3 py-3 text-left"
+                      >
+                        <span>{WEEKDAY_LABELS[i]}</span>
+                        {swapPickerSubtitle(d, bounds) && <span className="text-xs text-ink-muted">{swapPickerSubtitle(d, bounds)}</span>}
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            </>
+          ) : (
+            <>
+              <h2 className="text-sm text-ink-muted">
+                Swap {WEEKDAY_LABELS[dayIndex(swapFlow.from, bounds)]} with {WEEKDAY_LABELS[dayIndex(swapFlow.to, bounds)]}?
+              </h2>
+              {swapError && <p className="mt-2 text-xs text-red-400">{swapError}</p>}
+              <div className="mt-4 flex gap-3">
+                <PrimaryButton onClick={confirmSwap}>Confirm swap</PrimaryButton>
+                <SecondaryButton onClick={() => setSwapFlow({ step: 'choosing', from: swapFlow.from })}>Choose a different day</SecondaryButton>
+              </div>
+            </>
+          )}
+        </SheetShell>
+      )}
     </main>
   );
+}
+
+// A short context tag next to a day in the swap-target list — "Skipped" (the
+// owner's own example of when a same-week swap is most likely wanted) or,
+// for a day already paired with another, who it's currently swapped with
+// (picking it re-pairs it — dayplan.Swap already clears the stale side —
+// but that's worth surfacing rather than hiding, same "explain, don't hide"
+// spirit as SwapSheet.tsx's blocked-exercise handling). null otherwise.
+function swapPickerSubtitle(day: DayRow, bounds: WeekBounds): string | null {
+  if (day.color === 'skipped') return 'Skipped';
+  if (day.swappedWith) return `Swapped with ${WEEKDAY_LABELS[dayIndex(day.swappedWith, bounds)] ?? day.swappedWith}`;
+  return null;
 }
 
 function datesMonToSat(bounds: WeekBounds): string[] {

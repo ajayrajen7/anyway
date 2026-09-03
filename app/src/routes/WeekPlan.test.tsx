@@ -208,9 +208,11 @@ describe('Week Plan screen', () => {
     expect(await db.daySkips.get(monday)).toBeUndefined();
   });
 
-  // Post-M12 UX addition (feature 2): tap Swap on one day, then Swap on
-  // another, to swap which day's prescription they use for this week.
-  it('tap-to-pick Swap calls the API with both dates, then shows the pair as swapped', async () => {
+  // Post-M12 UX addition (feature 2, redesigned into a sheet after the
+  // owner reported the original tap-to-pick flow as confusing): Swap opens
+  // a sheet listing every other day; picking one shows a one-line confirm;
+  // Confirm commits it.
+  it('Swap opens a sheet, picking a day shows a confirm step, and Confirm calls the API', async () => {
     const user = userEvent.setup();
     const monday = weekBoundsFor(localDateKey()).start;
     const mondayDate = parseDateKey(monday);
@@ -232,20 +234,57 @@ describe('Week Plan screen', () => {
     const tuesdayRow = screen.getByText('Tuesday').closest('li')!;
 
     await user.click(within(mondayRow).getByRole('button', { name: 'Swap' }));
-    expect(await screen.findByText(/Tap another day to swap with Monday/)).toBeInTheDocument();
+    const sheetHeading = await screen.findByText('Swap Monday with:');
+    const sheet = sheetHeading.closest('div')!; // h2's own nearest ancestor div is SheetShell's outer container
+    expect(swapDaysMock).not.toHaveBeenCalled(); // opening the sheet must not swap anything yet
 
-    await user.click(within(tuesdayRow).getByRole('button', { name: 'Swap' }));
+    await user.click(within(sheet).getByRole('button', { name: 'Tuesday' }));
+    await screen.findByText('Swap Monday with Tuesday?');
+    expect(swapDaysMock).not.toHaveBeenCalled(); // picking a target must not swap yet either — Confirm does
+
+    await user.click(screen.getByRole('button', { name: 'Confirm swap' }));
 
     expect(swapDaysMock).toHaveBeenCalledWith(monday, tuesday);
     expect(await within(mondayRow).findByText(/Swapped with Tuesday/)).toBeInTheDocument();
     expect(within(tuesdayRow).getByText(/Swapped with Monday/)).toBeInTheDocument();
   });
 
-  it('tapping the picked day again cancels the swap pick without calling the API', async () => {
+  it('the swap sheet flags a skipped day, and its ✕ closes the whole flow without calling the API', async () => {
+    const user = userEvent.setup();
+    const monday = weekBoundsFor(localDateKey()).start;
+    const mondayDate = parseDateKey(monday);
+    const tuesday = localDateKey(new Date(mondayDate.getFullYear(), mondayDate.getMonth(), mondayDate.getDate() + 1));
+    const programme: ProgrammeResponse = {
+      phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
+      day_templates: [
+        { id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] },
+        { id: 2, weekday: 2, name: 'Upper A', kind: 'lifting', slots: [] },
+      ],
+    };
+    await db.programmeCache.put({ id: 1, cachedAt: new Date().toISOString(), data: programme });
+    await db.daySkips.put({ date: tuesday });
+
+    renderWeekPlan();
+    await screen.findByText('Monday');
+    const mondayRow = screen.getByText('Monday').closest('li')!;
+
+    await user.click(within(mondayRow).getByRole('button', { name: 'Swap' }));
+    const tuesdayOption = await screen.findByRole('button', { name: /Tuesday/ });
+    expect(within(tuesdayOption).getByText('Skipped')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByText('Swap Monday with:')).not.toBeInTheDocument();
+    expect(swapDaysMock).not.toHaveBeenCalled();
+  });
+
+  it('"Choose a different day" from the confirm step goes back to the day list', async () => {
     const user = userEvent.setup();
     const programme: ProgrammeResponse = {
       phase: { id: 1, name: 'Phase 1', start_week: 1, end_week: 6 },
-      day_templates: [{ id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] }],
+      day_templates: [
+        { id: 1, weekday: 1, name: 'Lower A', kind: 'lifting', slots: [] },
+        { id: 2, weekday: 2, name: 'Upper A', kind: 'lifting', slots: [] },
+      ],
     };
     await db.programmeCache.put({ id: 1, cachedAt: new Date().toISOString(), data: programme });
 
@@ -254,10 +293,12 @@ describe('Week Plan screen', () => {
     const mondayRow = screen.getByText('Monday').closest('li')!;
 
     await user.click(within(mondayRow).getByRole('button', { name: 'Swap' }));
-    await screen.findByRole('button', { name: 'Cancel swap' });
-    await user.click(within(mondayRow).getByRole('button', { name: 'Cancel swap' }));
+    await user.click(screen.getByRole('button', { name: 'Tuesday' }));
+    await screen.findByText('Swap Monday with Tuesday?');
 
-    expect(screen.queryByText(/Tap another day to swap with/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Choose a different day' }));
+
+    expect(await screen.findByText('Swap Monday with:')).toBeInTheDocument();
     expect(swapDaysMock).not.toHaveBeenCalled();
   });
 
@@ -277,10 +318,10 @@ describe('Week Plan screen', () => {
     renderWeekPlan();
     await screen.findByText('Monday');
     const mondayRow = screen.getByText('Monday').closest('li')!;
-    const tuesdayRow = screen.getByText('Tuesday').closest('li')!;
 
     await user.click(within(mondayRow).getByRole('button', { name: 'Swap' }));
-    await user.click(within(tuesdayRow).getByRole('button', { name: 'Swap' }));
+    await user.click(screen.getByRole('button', { name: 'Tuesday' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm swap' }));
 
     expect(await screen.findByText(/already been started/i)).toBeInTheDocument();
   });
