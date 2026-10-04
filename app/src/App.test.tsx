@@ -8,7 +8,7 @@ import App from './App';
 // for the loaded/error states.
 vi.mock('./lib/api', async () => {
   const actual = await vi.importActual<typeof import('./lib/api')>('./lib/api');
-  return { ...actual, getToday: () => new Promise(() => {}) };
+  return { ...actual, getToday: () => new Promise(() => {}), getExerciseLibrary: async () => [] };
 });
 
 describe('App routing smoke test', () => {
@@ -28,5 +28,16 @@ describe('App routing smoke test', () => {
       </MemoryRouter>,
     );
     expect(await screen.findAllByRole('button')).toHaveLength(4);
+  });
+
+  it('renders the Library route and persistent tab', async () => {
+    render(
+      <MemoryRouter initialEntries={['/library']}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Exercise library' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/library');
   });
 });

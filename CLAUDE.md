@@ -27,7 +27,7 @@ Operating contract for Claude Code on this repo. **Read this and `memory.md` at 
 9. **End every session/milestone by updating `memory.md`** (state + any decisions + any deviations).
 
 ## Stack & conventions (architecture §B1)
-- Frontend: Vite + React 19 + TypeScript (strict, `erasableSyntaxOnly`) in `app/`. Tailwind (v4, CSS-first config). Dexie (IndexedDB) — **source of truth during a session**, never mirrored server state. `react-router-dom` for the 9 routes in `prd.md` §A3. Zod at every boundary (API responses, anything read back out of Dexie after a schema bump).
+- Frontend: Vite + React 19 + TypeScript (strict, `erasableSyntaxOnly`) in `app/`. Tailwind (v4, CSS-first config). Dexie (IndexedDB) — **source of truth during a session**, never mirrored server state. `react-router-dom` for the routes in `prd.md` §A3. Zod at every boundary (API responses, anything read back out of Dexie after a schema bump).
 - Backend: Go 1.25 + chi in `server/`. SQLite via `modernc.org/sqlite` (pure Go, no cgo), one file, durable backup not runtime dependency. Auth = single static bearer token (`ANYWAY_API_TOKEN`) — no user/session system, one user.
 - Tests: Vitest + Testing Library (frontend units/components), Playwright (E2E, added M4+), Go's `testing` package (backend). MSW if/when the frontend needs to mock the API in tests.
 - Schema changes = new file under `server/internal/db/migrations/`, `CREATE TABLE IF NOT EXISTS` style (idempotent, no separate migration ledger yet — see `db.go`).

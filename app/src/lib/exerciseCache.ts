@@ -1,12 +1,12 @@
-// Caches the full exercise library into Dexie so the Swap and Add-exercise
-// screens (M5) can search it with no network call — those two screens live
+// Caches the full exercise library into Dexie so the Library, Swap, and
+// Add-exercise screens can browse/search it from local storage — the two
 // under /session/* and must stay offline-first same as the runner itself
 // (see docs/architecture.md §B2, §B6.1 amendment).
 import { db } from './db';
 import { getExerciseLibrary } from './api';
 import type { Exercise } from './types';
 
-// Call this only while online (Today.tsx does, right after its own
+// Call this only while online (Today.tsx and Library.tsx do, right after their
 // successful fetch). Safe to call repeatedly — it's a full replace, and the
 // library is small (under 100 rows) and changes rarely.
 export async function cacheExerciseLibrary(): Promise<void> {
@@ -15,10 +15,9 @@ export async function cacheExerciseLibrary(): Promise<void> {
 }
 
 // Writes one freshly-created exercise straight into the cache — used right
-// after POST /api/exercises/generate (see AddExercise.tsx) so a real-time
+// after POST /api/exercises/generate (see AddExercise.tsx and Library.tsx) so a real-time
 // LLM-drafted exercise is searchable/pickable immediately, without waiting
-// for the next full cacheExerciseLibrary() refresh (which only happens on
-// Today's next successful load).
+// for the next full cacheExerciseLibrary() refresh (from Today or Library).
 export async function cacheExercise(exercise: Exercise): Promise<void> {
   await db.exercises.put(exercise);
 }

@@ -230,7 +230,7 @@ View coverage →
 A persistent bottom-nav tab for browsing the exercise library by five broad
 sections: Chest, Back, Shoulders & Arms, Legs, and Core. These sections are a
 display layer over the 17 canonical muscle tags in A5.1; they do not replace
-or rename those tags. The proposed mapping is recorded in
+or rename those tags. The mapping is recorded in
 `docs/library-muscle-groups-architecture.md`.
 
 An exercise appears in every section represented by one or more of its

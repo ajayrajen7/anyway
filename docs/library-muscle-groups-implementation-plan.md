@@ -1,6 +1,6 @@
 # Exercise Library by Muscle Group — Implementation Plan
 
-**Status:** Plan only; implementation has not started.
+**Status:** Implemented and verified on `docs/library-muscle-groups-plan`.
 **Date:** 2026-10-04
 **Design:** [Architecture](library-muscle-groups-architecture.md)
 

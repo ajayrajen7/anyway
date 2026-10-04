@@ -1,6 +1,6 @@
 # Exercise Library by Muscle Group — Architecture
 
-**Status:** Proposed design; no application behavior has been changed.
+**Status:** Implemented on `docs/library-muscle-groups-plan`.
 **Date:** 2026-10-04
 **Repository baseline:** `ajayrajen7/anyway`, `main` as reviewed for this task.
 
@@ -20,14 +20,14 @@ The app already has a canonical vocabulary in `app/src/lib/types.ts` and readabl
 | Legs | `quads`, `hamstrings`, `glutes`, `adductors`, `calves`, `tibialis`, `foot` |
 | Core | `core` |
 
-This keeps all 17 tags represented in five sections. `Shoulders & Arms` is the proposed label so biceps and triceps have an explicit home. The mapping is UI taxonomy only; it does not rename tags or change persisted data.
+This keeps all 17 tags represented in five sections. The owner approved `Shoulders & Arms` so biceps and triceps have an explicit home. The mapping is UI taxonomy only; it does not rename tags or change persisted data.
 
 An exercise appears in every section containing at least one tag with a positive weight in its existing `muscles` map. Its detailed tags and weights remain visible under the exercise name (for example, `Chest 1.0 · delts_front 0.5`). Do not combine weights into a single broad-section score: the current 1.0 / 0.5 / 0.3 values describe individual canonical tags, and aggregating them would invent a new metric.
 
 ## Navigation and data flow
 
 - Add `/library` under the existing `AppShell` and add Library to the persistent bottom navigation.
-- Read the library from the existing Dexie `db.exercises` cache. The app already refreshes that cache through `cacheExerciseLibrary()` when Today successfully fetches online; browsing the tab therefore remains available offline.
+- Read the library from the existing Dexie `db.exercises` cache immediately. When online, refresh that cache in the background through `cacheExerciseLibrary()` and then refresh the view; a failed network refresh leaves the cached list available offline.
 - Each section lists matching cached exercises in a stable name order. An exercise may be shown in multiple sections, but it remains one record in Dexie and on the server.
 - Put an **Add exercise** action in each section. It collects an exercise name and may accept a short description or equipment note.
 - On create, call the existing `generateExercise(name, notes)` client helper and `POST /api/exercises/generate`. Include the selected broad section in `notes` as context, while asking the model to classify every materially involved canonical muscle rather than limiting the answer to that section.
@@ -47,6 +47,6 @@ This change adds no canonical muscle tag, schema migration, seed rewrite, progra
 - `app/src/routes/Library.tsx` — browsing and generation UI.
 - `docs/prd.md`, `docs/architecture.md`, `docs/implementation-plan.md`, and `memory.md` — canonical project documentation and checkpoint.
 
-## Review point
+## Settled product choice
 
-The only product-level taxonomy choice in this draft is the five-section label `Shoulders & Arms`. If the owner wants the visible label to remain simply `Shoulders`, the app still needs an explicit place for biceps and triceps; the mapping should be settled before implementation.
+The owner approved five sections and the `Shoulders & Arms` label so biceps and triceps have an explicit home.

@@ -42,9 +42,9 @@ export async function getToday(date: string): Promise<TodayResponse> {
 
 // GET /api/exercises?include_blocked=1 — the *whole* library, blocked
 // exercises included. This is only ever called while online (from
-// src/lib/exerciseCache.ts, triggered by Today.tsx) to refresh the offline
-// search cache used by the Swap/Add screens — never called directly from
-// those screens themselves, which must stay network-free (§B2).
+// src/lib/exerciseCache.ts, triggered by Today.tsx or Library.tsx) to refresh
+// the offline exercise cache used by Library and Swap/Add — those search
+// screens themselves remain network-free (§B2).
 export async function getExerciseLibrary(): Promise<Exercise[]> {
   const raw = await apiFetch<unknown>('/api/exercises?include_blocked=1');
   return Exercise.array().parse(raw);

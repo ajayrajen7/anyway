@@ -1,16 +1,16 @@
-// UX refactor: a persistent bottom nav — Today / Week / Coverage, matching
-// the owner's reference screenshot's order and labels — wraps the three
+// Persistent bottom nav — Today / Week / Coverage / Library, matching
+// the owner's reference screenshot's order and labels — wraps the four
 // "browse any time" screens (see App.tsx). Session, Add, Swap, the summary,
 // morning check, and settings stay outside it: they're full-screen flows
 // you enter and leave, not places to idly switch between.
 import { NavLink, Outlet } from 'react-router-dom';
 
-// Route paths are unchanged (/coverage, /week) — only the tab order and the
-// "Week" vs. "Week Plan" label were reshaped to match the reference.
+// Route paths stay descriptive; labels are short enough for the mobile nav.
 const TABS = [
   { to: '/', label: 'Today', icon: '🏠', end: true },
   { to: '/week', label: 'Week', icon: '📅', end: false },
   { to: '/coverage', label: 'Coverage', icon: '📊', end: false },
+  { to: '/library', label: 'Library', icon: '📚', end: false },
 ] as const;
 
 export default function AppShell() {
