@@ -5,6 +5,7 @@ Read at the start of every session; update at the end of every session/milestone
 ## Current state
 - **Project:** Anyway — prescription-and-logging PWA for a fixed 6-month training programme (one user, injury-constrained, mid-session one-handed logging).
 - **Phase:** Building. Doc chain complete (`docs/vision.md`, `docs/programme.md`, `docs/prd.md`, `docs/architecture.md`, `docs/implementation-plan.md`). **M0 done.**
+- **Next planned work:** M13 — Library tab organized by broad muscle sections. Architecture and implementation plan drafted in `docs/library-muscle-groups-architecture.md` and `docs/library-muscle-groups-implementation-plan.md`; implementation has not started. Reuse the existing exercise-generation endpoint and add only the frontend tag-to-section mapping.
 - **Repo:** `ajayrajen7/anyway`, started empty this session. `app/` = Vite+React+TS frontend, `server/` = Go+chi+SQLite backend.
 - **Relationship to `phayalman`:** deliberately a separate repo/stack, not shared code. Stacks diverge almost completely (Next.js/Supabase/Postgres/server-truth vs. Vite/Go/SQLite/local-truth-offline-first) — see the session where this was decided for the full reasoning. What *was* carried over: the CLAUDE.md/memory.md operating contract, the doc-map convention, Zod-at-boundaries discipline, TDD-per-milestone discipline. No code or libraries shared.
 

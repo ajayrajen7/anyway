@@ -28,7 +28,7 @@ A prescription-and-logging app for one user following a fixed 6-month training p
 
 ## A3. Screens
 
-A persistent bottom nav (Today / Coverage / Week Plan) wraps the three
+A persistent bottom nav (Today / Week / Coverage / Library) wraps the four
 "browse any time" screens. Everything else is a full-screen flow entered
 and left, not a tab.
 
@@ -37,6 +37,7 @@ and left, not a tab.
 | `/` | Today | Today's session card, mobility checkbox, steps, protein row (evening only) |
 | `/coverage` | Coverage | Muscle-group coverage actual vs prescribed + pain strip, navigable across weeks |
 | `/week` | Week Plan | Monday–Saturday, each day graded green/yellow/red, navigable across weeks |
+| `/library` | Library | Exercise library grouped by broad muscle section; add exercises through the existing LLM generation flow |
 | `/check` | Morning Check | Full-screen, 4 buttons, closes on tap |
 | `/session/:id` | Exercise list | Every exercise in today's session; start from any of them, swap or delete any of them |
 | `/session/:id/exercise/:key` | Exercise screen | One exercise, full screen, set logging |
@@ -223,6 +224,31 @@ View coverage →
 - The "3" is day-appropriate: a lifting day's are the session, protein, and steps; a cardio/mobility day's are cardio+mobility (one combined item), protein, and steps.
 - **Navigable across weeks**, same as Coverage.
 - Descriptive only, same restraint as A3.7 — no streaks, no badges, no "you're on a 4-week streak" copy.
+
+### A3.9 Library (`/library`)
+
+A persistent bottom-nav tab for browsing the exercise library by five broad
+sections: Chest, Back, Shoulders & Arms, Legs, and Core. These sections are a
+display layer over the 17 canonical muscle tags in A5.1; they do not replace
+or rename those tags. The proposed mapping is recorded in
+`docs/library-muscle-groups-architecture.md`.
+
+An exercise appears in every section represented by one or more of its
+positive-weight canonical tags. Show its detailed muscle labels and existing
+weights under its name. Do not add or display a combined section score.
+Blocked exercises remain visible with their reason and blocked state.
+
+Each section has an **Add exercise** action. The person enters a name and may
+include a short description or equipment note. This calls the existing
+`POST /api/exercises/generate` flow, passing the selected section as context
+alongside any notes. Show the returned detailed muscle weights and existing
+pressure, impact, caution, blocked reason, and AI-estimated label. The existing
+endpoint persists the generated entry and the client caches it in Dexie
+immediately. Creating requires a connection; browsing uses the local exercise
+cache and remains available offline.
+
+The Library is for browsing the shared catalogue. It does not change session
+addition attribution (`Trainer` / `Mine`) or the session runner.
 
 ## A4. Weight tracking / "the Vault" — removed
 
