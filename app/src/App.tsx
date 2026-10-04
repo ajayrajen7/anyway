@@ -4,6 +4,7 @@ import UpdateBanner from './components/UpdateBanner';
 import AddExercise from './routes/AddExercise';
 import Coverage from './routes/Coverage';
 import DayPreview from './routes/DayPreview';
+import Library from './routes/Library';
 import MorningCheck from './routes/MorningCheck';
 import SessionExercise from './routes/SessionExercise';
 import SessionOverview from './routes/SessionOverview';
@@ -13,8 +14,8 @@ import SwapSheet from './routes/SwapSheet';
 import Today from './routes/Today';
 import WeekPlan from './routes/WeekPlan';
 
-// Route map — A3, reshaped by the UX refactor around a persistent bottom
-// nav (Today / Coverage / Week Plan — see AppShell.tsx). Everything else —
+// Route map — A3, shaped around a persistent bottom nav (Today / Week /
+// Coverage / Library — see AppShell.tsx). Everything else —
 // the session flow, morning check, settings — stays outside that shell:
 // full-screen flows you enter and leave, not places to idly switch tabs.
 //
@@ -36,8 +37,9 @@ export default function App() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<Today />} />
-          <Route path="/coverage" element={<Coverage />} />
           <Route path="/week" element={<WeekPlan />} />
+          <Route path="/coverage" element={<Coverage />} />
+          <Route path="/library" element={<Library />} />
         </Route>
         <Route path="/check" element={<MorningCheck />} />
         <Route path="/day/:date" element={<DayPreview />} />

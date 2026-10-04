@@ -54,9 +54,9 @@ export class AppDatabase extends Dexie {
       loggedSets: '++id, client_uuid, session_id, exercise_id, logged_at, [session_id+exercise_id]',
       todayCache: 'sessionId, date',
     });
-    // M5: the exercise library (populated from GET /api/exercises whenever
-    // Today.tsx has a connection — see src/lib/exerciseCache.ts) so the swap
-    // and add-exercise search screens can search offline, and a per-session
+    // M5: the exercise library (populated from GET /api/exercises when Today
+    // or Library has a connection — see src/lib/exerciseCache.ts) so the
+    // Library and session search screens can work from local data, and a per-session
     // overlay recording swaps/additions without mutating the immutable
     // todayCache snapshot (see src/lib/overlay.ts, src/lib/types.ts#SessionOverlay).
     this.version(3).stores({
