@@ -24,13 +24,13 @@ export async function cacheExercise(exercise: Exercise): Promise<void> {
 
 // Offline substring search over the cached library, mirroring the backend's
 // own search semantics (server/internal/seed/seed.go#List): case-insensitive
-// match on name, blocked rows excluded unless includeBlocked is set. Never
-// hides a blocked *match* when includeBlocked is requested — the swap sheet
+// match on name. Archived rows are excluded; blocked rows are excluded unless
+// includeBlocked is set. Never hides a blocked *match* when requested — the swap sheet
 // needs to show it greyed with its reason, not silently omit it (§A3.4).
 export async function searchExercisesOffline(query: string, includeBlocked: boolean): Promise<Exercise[]> {
   const all = await db.exercises.toArray();
   const q = query.trim().toLowerCase();
   return all
-    .filter((e) => (includeBlocked || !e.blocked) && (q === '' || e.name.toLowerCase().includes(q)))
+    .filter((e) => e.active !== false && (includeBlocked || !e.blocked) && (q === '' || e.name.toLowerCase().includes(q)))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

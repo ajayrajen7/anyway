@@ -28,6 +28,8 @@ export const Exercise = z.object({
   blocked: z.boolean(),
   block_reason: z.string().nullable(),
   caution: z.string().nullable(),
+  // Older Dexie rows predate archival; absence means the exercise is active.
+  active: z.boolean().optional(),
   // partialRecord, not record: a real exercise only ever specifies a
   // handful of the 17 muscle groups (§A5.2) — z.record(enum, ...) infers a
   // TS type requiring *every* key present, which no real exercise satisfies.

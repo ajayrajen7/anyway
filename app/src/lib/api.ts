@@ -40,14 +40,19 @@ export async function getToday(date: string): Promise<TodayResponse> {
   return TodayResponse.parse(raw);
 }
 
-// GET /api/exercises?include_blocked=1 — the *whole* library, blocked
-// exercises included. This is only ever called while online (from
+// GET /api/exercises?include_blocked=1&include_archived=1 — the *whole*
+// library, including blocked and archived exercises. Called while online (from
 // src/lib/exerciseCache.ts, triggered by Today.tsx or Library.tsx) to refresh
 // the offline exercise cache used by Library and Swap/Add — those search
 // screens themselves remain network-free (§B2).
 export async function getExerciseLibrary(): Promise<Exercise[]> {
-  const raw = await apiFetch<unknown>('/api/exercises?include_blocked=1');
+  const raw = await apiFetch<unknown>('/api/exercises?include_blocked=1&include_archived=1');
   return Exercise.array().parse(raw);
+}
+
+// Archive affects future catalogue choices, while historical references stay intact.
+export async function archiveExercise(id: number): Promise<void> {
+  await apiFetch<void>(`/api/exercises/${id}`, { method: 'DELETE' });
 }
 
 // GET /api/programme — the active phase's full week structure (M8
