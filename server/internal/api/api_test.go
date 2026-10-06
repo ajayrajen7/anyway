@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +15,104 @@ import (
 	"github.com/ajayrajen7/anyway/server/internal/seed"
 	syncpkg "github.com/ajayrajen7/anyway/server/internal/sync"
 )
+
+func TestArchiveExerciseRoute(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := seed.Apply(t.Context(), conn, []seed.Exercise{{Slug: "row", Name: "Row", Equipment: "barbell", Pressure: "low", Impact: "none", Muscles: map[string]float64{"quads": 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	if err := conn.QueryRow(`SELECT id FROM exercises WHERE slug = 'row'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	router := api.NewRouter(conn, "secret", nil)
+	request := func(path, token string) int {
+		req := httptest.NewRequest(http.MethodDelete, path, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	path := fmt.Sprintf("/api/exercises/%d", id)
+	if got := request(path, ""); got != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated: got %d", got)
+	}
+	if got := request(path, "secret"); got != http.StatusNoContent {
+		t.Fatalf("archive: got %d", got)
+	}
+	if got := request(path, "secret"); got != http.StatusNoContent {
+		t.Fatalf("repeat archive: got %d", got)
+	}
+	if got := request("/api/exercises/99999", "secret"); got != http.StatusNotFound {
+		t.Fatalf("unknown: got %d", got)
+	}
+	for _, bad := range []string{"0", "-1", "abc", "1.5"} {
+		if got := request("/api/exercises/"+bad, "secret"); got != http.StatusBadRequest {
+			t.Errorf("id %q: got %d", bad, got)
+		}
+	}
+	var active int
+	if err := conn.QueryRow(`SELECT active FROM exercises WHERE id = ?`, id).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	if active != 0 {
+		t.Fatalf("archive left active=%d", active)
+	}
+}
+
+func TestArchivedExerciseListing(t *testing.T) {
+	conn, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := seed.Apply(t.Context(), conn, []seed.Exercise{
+		{Slug: "old", Name: "Old", Equipment: "barbell", Pressure: "low", Impact: "none", Muscles: map[string]float64{"quads": 1}},
+		{Slug: "new", Name: "New", Equipment: "barbell", Pressure: "low", Impact: "none", Muscles: map[string]float64{"quads": 1}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE exercises SET active = 0 WHERE slug = 'old'`); err != nil {
+		t.Fatal(err)
+	}
+	router := api.NewRouter(conn, "secret", nil)
+	request := func(path string) []seed.Exercise {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", path, rec.Code, rec.Body.String())
+		}
+		var got []seed.Exercise
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	for _, path := range []string{"/api/exercises", "/api/exercises?q=Old", "/api/exercises?include_blocked=1"} {
+		got := request(path)
+		if path == "/api/exercises?q=Old" {
+			if len(got) != 0 {
+				t.Fatalf("%s: %+v", path, got)
+			}
+			continue
+		}
+		if len(got) != 1 || got[0].Slug != "new" || !got[0].Active {
+			t.Fatalf("%s: %+v", path, got)
+		}
+	}
+	got := request("/api/exercises?include_archived=1&include_blocked=1")
+	if len(got) != 2 || got[0].Slug != "new" || !got[0].Active || got[1].Slug != "old" || got[1].Active {
+		t.Fatalf("complete cache: %+v", got)
+	}
+}
 
 func TestHealthz(t *testing.T) {
 	conn, err := db.Open(":memory:")
@@ -592,7 +691,7 @@ func TestPostGenerateExerciseInsertsAndReturnsTheDraftedExercise(t *testing.T) {
 		t.Fatalf("expected the inserted exercise back with a real id and source=llm, got %+v", got)
 	}
 
-	visible, err := seed.List(context.Background(), conn, "", true)
+	visible, err := seed.List(context.Background(), conn, "", true, false)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

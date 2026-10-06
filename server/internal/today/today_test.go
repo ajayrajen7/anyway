@@ -67,6 +67,55 @@ func seedFullConn(t *testing.T) *sql.DB {
 	return conn
 }
 
+func TestArchivedExercisePrescribedSlotStillResolves(t *testing.T) {
+	conn := seedFullConn(t)
+	defer conn.Close()
+	ctx := context.Background()
+	var id int64
+	if err := conn.QueryRow(`SELECT id FROM exercises WHERE slug = 'leg-press'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Archive(ctx, conn, id); err != nil {
+		t.Fatal(err)
+	}
+	got, err := today.Get(ctx, conn, "2026-01-05")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Slots) == 0 || got.Slots[0].Exercise.ID != id || got.Slots[0].Exercise.Name == "" {
+		t.Fatalf("archived prescription lost: %+v", got.Slots)
+	}
+}
+
+func TestArchivedExerciseApprovedSwapOmitted(t *testing.T) {
+	conn := seedFullConn(t)
+	defer conn.Close()
+	ctx := context.Background()
+	before, err := today.Get(ctx, conn, "2026-01-05")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Slots) == 0 || len(before.Slots[0].Swaps) < 2 {
+		t.Fatalf("missing fixture swaps: %+v", before.Slots)
+	}
+	archived := before.Slots[0].Swaps[0].ID
+	if err := seed.Archive(ctx, conn, archived); err != nil {
+		t.Fatal(err)
+	}
+	after, err := today.Get(ctx, conn, "2026-01-05")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Slots[0].Swaps) != len(before.Slots[0].Swaps)-1 {
+		t.Fatalf("swap count unchanged: before=%d after=%d", len(before.Slots[0].Swaps), len(after.Slots[0].Swaps))
+	}
+	for _, swap := range after.Slots[0].Swaps {
+		if swap.ID == archived {
+			t.Fatalf("archived swap remains: %+v", after.Slots[0].Swaps)
+		}
+	}
+}
+
 func TestGetOnLiftingDayCreatesSessionAndReturnsSlots(t *testing.T) {
 	conn := seedFullConn(t)
 	defer conn.Close()

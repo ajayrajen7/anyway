@@ -302,7 +302,7 @@ func swapsFor(ctx context.Context, conn *sql.DB, slotID int64) ([]ExerciseRef, e
 		SELECT e.id, e.slug, e.name, e.unilateral, e.increment_kg
 		FROM slot_swaps ss
 		JOIN exercises e ON e.id = ss.exercise_id
-		WHERE ss.slot_id = ?
+		WHERE ss.slot_id = ? AND e.active = 1
 		ORDER BY ss.position
 	`, slotID)
 	if err != nil {

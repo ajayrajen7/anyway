@@ -30,6 +30,8 @@ var validPressure = map[string]bool{"low": true, "moderate": true, "high": true}
 var validImpact = map[string]bool{"none": true, "low": true, "high": true}
 var validSource = map[string]bool{"programme": true, "llm": true}
 
+var ErrNotFound = errors.New("exercise not found")
+
 // Exercise is one seed-file entry (and also the shape returned by List).
 type Exercise struct {
 	ID          int64              `json:"id,omitempty"`
@@ -41,6 +43,7 @@ type Exercise struct {
 	Unilateral  bool               `json:"unilateral"`
 	IncrementKg float64            `json:"increment_kg"`
 	Blocked     bool               `json:"blocked"`
+	Active      bool               `json:"active"`
 	BlockReason *string            `json:"block_reason"`
 	Caution     *string            `json:"caution"`
 	Muscles     map[string]float64 `json:"muscles"`
@@ -187,8 +190,8 @@ func Apply(ctx context.Context, conn *sql.DB, exercises []Exercise) (int, error)
 // (case-insensitive), blocked rows excluded unless includeBlocked is set —
 // but never omitted from a *search hit*, since the UI must explain a
 // contraindicated match rather than hide it (prd.md §A3.4).
-func List(ctx context.Context, conn *sql.DB, query string, includeBlocked bool) ([]Exercise, error) {
-	sqlQuery := `SELECT id, slug, name, equipment, pressure, impact, unilateral, increment_kg, blocked, block_reason, caution, source FROM exercises`
+func List(ctx context.Context, conn *sql.DB, query string, includeBlocked, includeArchived bool) ([]Exercise, error) {
+	sqlQuery := `SELECT id, slug, name, equipment, pressure, impact, unilateral, increment_kg, blocked, block_reason, caution, source, active FROM exercises`
 	args := []any{}
 	var where []string
 	if query != "" {
@@ -197,6 +200,9 @@ func List(ctx context.Context, conn *sql.DB, query string, includeBlocked bool) 
 	}
 	if !includeBlocked {
 		where = append(where, `blocked = 0`)
+	}
+	if !includeArchived {
+		where = append(where, `active = 1`)
 	}
 	if len(where) > 0 {
 		sqlQuery += " WHERE " + strings.Join(where, " AND ")
@@ -210,7 +216,7 @@ func List(ctx context.Context, conn *sql.DB, query string, includeBlocked bool) 
 	var out []Exercise
 	for rows.Next() {
 		var e Exercise
-		if err := rows.Scan(&e.ID, &e.Slug, &e.Name, &e.Equipment, &e.Pressure, &e.Impact, &e.Unilateral, &e.IncrementKg, &e.Blocked, &e.BlockReason, &e.Caution, &e.Source); err != nil {
+		if err := rows.Scan(&e.ID, &e.Slug, &e.Name, &e.Equipment, &e.Pressure, &e.Impact, &e.Unilateral, &e.IncrementKg, &e.Blocked, &e.BlockReason, &e.Caution, &e.Source, &e.Active); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -244,6 +250,23 @@ func List(ctx context.Context, conn *sql.DB, query string, includeBlocked bool) 
 		}
 	}
 	return out, muscleRows.Err()
+}
+
+// Archive removes an exercise from catalogue choices while preserving every
+// reference to its row. Repeated archives of an existing row succeed.
+func Archive(ctx context.Context, conn *sql.DB, id int64) error {
+	result, err := conn.ExecContext(ctx, `UPDATE exercises SET active = 0 WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // InsertOne adds a single brand-new exercise — used by exercisegen for
@@ -290,6 +313,7 @@ func InsertOne(ctx context.Context, conn *sql.DB, e Exercise) (Exercise, error) 
 		return Exercise{}, fmt.Errorf("get id for %s: %w", e.Slug, err)
 	}
 	e.ID = id
+	e.Active = true
 
 	muscles := make([]string, 0, len(e.Muscles))
 	for m := range e.Muscles {

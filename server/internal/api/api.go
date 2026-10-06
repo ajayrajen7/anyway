@@ -80,6 +80,7 @@ func NewRouter(conn *sql.DB, token string, gen exerciseGenerator) chi.Router {
 		// recovery read.
 		r.Get("/sessions/{id}/sets", getSessionSets(conn))
 		r.Get("/exercises", listExercises(conn))
+		r.Delete("/exercises/{id}", deleteExercise(conn))
 		// Real-time LLM-drafted exercise creation — the one deliberate
 		// online-only step in this otherwise offline-first app. See
 		// exercisegen's doc comment and memory.md's "real-time exercise
@@ -131,7 +132,7 @@ func NewRouter(conn *sql.DB, token string, gen exerciseGenerator) chi.Router {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		if r.Method == http.MethodOptions {
 			// A CORS preflight never carries the real Authorization header,
@@ -156,7 +157,7 @@ func healthz(conn *sql.DB) http.HandlerFunc {
 	}
 }
 
-// listExercises implements GET /api/exercises?q=&include_blocked=1
+// listExercises implements GET /api/exercises?q=&include_blocked=1&include_archived=1
 // (docs/architecture.md §B5). Excludes blocked exercises unless
 // include_blocked=1 is passed — prd.md §A3.4 needs that for the swap sheet's
 // "explain, don't hide" search.
@@ -164,8 +165,9 @@ func listExercises(conn *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query().Get("q")
 		includeBlocked := r.URL.Query().Get("include_blocked") == "1"
+		includeArchived := r.URL.Query().Get("include_archived") == "1"
 
-		exercises, err := seed.List(r.Context(), conn, query, includeBlocked)
+		exercises, err := seed.List(r.Context(), conn, query, includeBlocked, includeArchived)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -175,6 +177,25 @@ func listExercises(conn *sql.DB) http.HandlerFunc {
 			exercises = []seed.Exercise{} // never null in the response
 		}
 		json.NewEncoder(w).Encode(exercises)
+	}
+}
+
+func deleteExercise(conn *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil || id <= 0 {
+			http.Error(w, "invalid exercise id", http.StatusBadRequest)
+			return
+		}
+		if err := seed.Archive(r.Context(), conn, id); err != nil {
+			if errors.Is(err, seed.ErrNotFound) {
+				http.Error(w, "exercise not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "archive exercise", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
