@@ -242,11 +242,13 @@ of active catalogue exercises and opens only that section. Its Add action
 remains visible beside the disclosure; opening Add reveals that section.
 
 Each exercise card offers Archive. Confirm that archiving removes the entry
-from the Library and future search choices while existing plans and history
-remain intact. Archiving requires a connection. Cancelled or failed requests
+from the Library and future search choices, including approved swaps held in
+older session snapshots, while existing plans and history remain intact.
+Archiving requires a connection. Cancelled or failed requests
 leave the exercise visible and a failure shows an inline error. A successful
 archive removes the exercise from every matching section, including when it
-was cross-listed, and it stays absent after refresh. Archived records and
+was cross-listed, and it stays absent after refresh. A delayed cache refresh
+cannot reactivate it. Archived records and
 their muscle weights remain stored for programme/session references and
 Coverage. Old cached records without an active flag remain visible.
 

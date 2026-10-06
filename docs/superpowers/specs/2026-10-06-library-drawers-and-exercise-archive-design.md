@@ -1,6 +1,6 @@
 # Library Drawers and Exercise Archive — Design
 
-**Status:** Awaiting owner review  
+**Status:** Approved for implementation; owner waived plan review
 **Date:** 2026-10-06  
 **Repository:** `ajayrajen7/anyway`, `main`
 
@@ -39,8 +39,8 @@ Delete or rewrite programme slots, approved swaps, logged sets, and related musc
 
 - Add `exercises.active INTEGER NOT NULL DEFAULT 1` in a new SQLite migration. Existing rows remain active by default.
 - Add an idempotent authenticated `DELETE /api/exercises/{id}` operation that sets `active = 0` and returns success for an existing row. Unknown IDs return not found. The handler never deletes or rewrites related rows.
-- The ordinary Library and picker catalogue only returns active exercises. Approved swap lists omit archived entries, and offline search excludes archived exercises.
-- Keep archived exercise data available in the client's exercise cache because Coverage and historical/session recovery use exercise details. The complete cache refresh includes archived rows and their `active` value; user-facing catalogue views filter those rows out. Treat a missing `active` value in a pre-migration client cache as active for compatibility.
+- The ordinary Library and picker catalogue only returns active exercises. Approved swap lists omit archived entries, including options already present in a cached session snapshot; the Swap sheet filters those choices using the shared exercise cache without rewriting that snapshot. Offline search excludes archived exercises.
+- Keep archived exercise data available in the client's exercise cache because Coverage and historical/session recovery use exercise details. The complete cache refresh includes archived rows and their `active` value; cache writes preserve any locally archived status so an older in-flight response cannot reactivate a row. User-facing catalogue views filter archived rows out. Treat a missing `active` value in a pre-migration client cache as active for compatibility.
 - Re-seeding an existing curated exercise updates its seed-owned fields but preserves its current `active` state. A newly inserted exercise starts active through the database default.
 - Archiving does not edit existing `slots`, `slot_swaps`, `logged_sets`, session snapshots, or their exercise IDs. A currently prescribed programme slot can therefore still render its exercise after that exercise has been archived from the general catalogue. This preserves the programme and history; archive is catalogue removal, not programme editing.
 - Exercise generation remains unchanged and creates active entries. Blocked exercises retain their current safety treatment; archiving is an additional way to remove entries from normal browsing/search.

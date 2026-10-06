@@ -44,6 +44,18 @@ describe('cacheExerciseLibrary', () => {
     await cacheExerciseLibrary();
     expect(await db.exercises.get(3)).toMatchObject({ active: false, muscles: { quads: 0.5, glutes: 0.75 } });
   });
+
+  it('cacheRefreshDoesNotReactivateAnExerciseArchivedWhileTheRequestWasInFlight', async () => {
+    let resolveRefresh!: (exercises: Exercise[]) => void;
+    getExerciseLibraryMock.mockImplementation(() => new Promise<Exercise[]>((resolve) => { resolveRefresh = resolve; }));
+    const refresh = cacheExerciseLibrary();
+    await db.exercises.put(ex({ active: false }));
+
+    resolveRefresh([ex({ active: true })]);
+    await refresh;
+
+    expect((await db.exercises.get(1))?.active).toBe(false);
+  });
 });
 
 describe('searchExercisesOffline', () => {

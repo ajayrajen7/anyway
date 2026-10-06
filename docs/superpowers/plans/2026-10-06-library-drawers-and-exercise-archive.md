@@ -15,7 +15,8 @@
 - Any of the existing seeded or LLM-created exercises can be archived.
 - Archive is online-only; do not add offline archive queueing or recovery.
 - Archive preserves exercise rows, muscle weights, programme slots, slot swaps, logged sets, session snapshots, and their IDs.
-- The Library and future search/slot-swap choices exclude archived exercises.
+- The Library and future search/slot-swap choices exclude archived exercises, including approved options in older cached session snapshots.
+- An in-flight full-library refresh cannot reactivate a locally archived exercise.
 - Every muscle group is collapsed on first render; its Add action remains visible and independent.
 - No new dependency, archive-restore UI, automatic deduplication, or programme editing.
 
@@ -37,8 +38,9 @@
 - `app/src/lib/types.ts` — optional `Exercise.active` for old local cache compatibility.
 - `app/src/lib/api.ts` — full-cache listing and archive request.
 - `app/src/lib/api.test.ts` — archive request method/path/success/error behavior.
-- `app/src/lib/exerciseCache.ts` and `exerciseCache.test.ts` — retain archived details in Dexie and filter them from search.
+- `app/src/lib/exerciseCache.ts` and `exerciseCache.test.ts` — retain archived details in Dexie, preserve archive state across stale refreshes, and filter them from search.
 - `app/src/routes/Library.tsx` and `Library.test.tsx` — disclosure drawers, confirmation, online action, pending/error/success states.
+- `app/src/routes/SwapSheet.tsx` and `SessionFlows.test.tsx` — filter archived choices from approved options held in cached session snapshots.
 - `docs/prd.md`, `docs/architecture.md`, `docs/implementation-plan.md`, `memory.md`, `CLAUDE.md` — canonical behavior and project checkpoint/index.
 
 ### Task 1: Persist and serve archived exercises safely

@@ -11,7 +11,15 @@ import type { Exercise } from './types';
 // library is small (under 100 rows) and changes rarely.
 export async function cacheExerciseLibrary(): Promise<void> {
   const exercises = await getExerciseLibrary();
-  await db.exercises.bulkPut(exercises);
+  await db.transaction('rw', db.exercises, async () => {
+    // A response may have been requested before a successful archive and land
+    // afterward. Archive is monotonic, so keep any locally archived IDs false.
+    const cached = await db.exercises.toArray();
+    const archivedIds = new Set(cached.filter((exercise) => exercise.active === false).map((exercise) => exercise.id));
+    await db.exercises.bulkPut(exercises.map((exercise) =>
+      archivedIds.has(exercise.id) ? { ...exercise, active: false } : exercise,
+    ));
+  });
 }
 
 // Writes one freshly-created exercise straight into the cache — used right
@@ -20,6 +28,13 @@ export async function cacheExerciseLibrary(): Promise<void> {
 // for the next full cacheExerciseLibrary() refresh (from Today or Library).
 export async function cacheExercise(exercise: Exercise): Promise<void> {
   await db.exercises.put(exercise);
+}
+
+// Session snapshots retain the approved swap list they were created with.
+// Use the shared archive state to keep a later archive out of that list too.
+export async function getArchivedExerciseIds(): Promise<Set<number>> {
+  const exercises = await db.exercises.toArray();
+  return new Set(exercises.filter((exercise) => exercise.active === false).map((exercise) => exercise.id));
 }
 
 // Offline substring search over the cached library, mirroring the backend's
