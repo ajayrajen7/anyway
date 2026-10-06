@@ -13,6 +13,7 @@ Operating contract for Claude Code on this repo. **Read this and `memory.md` at 
 - `docs/prd.md` — v1 scope: screens, flows, edge cases, the Vault, out-of-scope list.
 - `docs/architecture.md` — build spec: stack (§B1), offline-first design (§B2), schema (§B3), the coverage query (§B4), API (§B5), frontend rules Claude Code must enforce (§B6), build order (§B7), named risks (§B8).
 - `docs/implementation-plan.md` — milestones (M0–M10), TDD approach, commands.
+- `docs/superpowers/specs/` — reviewed design specs for new work; read the current spec before planning its implementation.
 - `memory.md` — living state + decision log (you maintain this).
 
 ## Operating rules
