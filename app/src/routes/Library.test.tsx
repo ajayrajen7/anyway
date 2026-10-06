@@ -299,6 +299,36 @@ describe('Library', () => {
     confirmSpy.mockRestore();
   });
 
+  it('staleRefreshCannotRestoreArchivedExercise', async () => {
+    setOnline(false);
+    const original = exercise({ active: true, muscles: { chest: 1, delts_front: 0.5 } });
+    await db.exercises.put(original);
+    setOnline(true);
+    let resolveRefresh!: () => void;
+    refreshLibraryMock.mockImplementation(async () => {
+      await new Promise<void>((resolve) => { resolveRefresh = resolve; });
+      await db.exercises.put(original);
+    });
+    archiveExerciseMock.mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderLibrary();
+    const chest = await screen.findByRole('region', { name: 'Chest' });
+    const shoulders = screen.getByRole('region', { name: 'Shoulders & Arms' });
+    await waitFor(() => expect(refreshLibraryMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    await userEvent.click(within(shoulders).getByRole('button', { name: /Shoulders & Arms, 1 exercises/i }));
+    await userEvent.click(within(chest).getByRole('button', { name: 'Archive Sample exercise' }));
+    await waitFor(async () => expect((await db.exercises.get(1))?.active).toBe(false));
+    resolveRefresh();
+    await refreshLibraryMock.mock.results[0].value;
+    await waitFor(async () => {
+      expect((await db.exercises.get(1))?.active).toBe(false);
+      expect(within(chest).queryByRole('heading', { name: 'Sample exercise' })).not.toBeInTheDocument();
+      expect(within(shoulders).queryByRole('heading', { name: 'Sample exercise' })).not.toBeInTheDocument();
+    });
+    confirmSpy.mockRestore();
+  });
+
   it('archiveRequiresConnection', async () => {
     setOnline(false);
     await db.exercises.put(exercise());

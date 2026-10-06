@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Card, Pill } from '../components/ui';
 import { ApiError, archiveExercise, generateExercise } from '../lib/api';
 import { cacheExercise, cacheExerciseLibrary } from '../lib/exerciseCache';
@@ -17,6 +17,7 @@ export default function Library() {
   const [expandedSections, setExpandedSections] = useState<Set<LibrarySectionId>>(() => new Set());
   const [archivingId, setArchivingId] = useState<number | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const archivedIds = useRef(new Set<number>());
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
   const [generation, setGeneration] = useState<GenerateState>({ status: 'idle' });
@@ -28,12 +29,13 @@ export default function Library() {
 
     async function readCache() {
       const cached = await db.exercises.toArray();
-      if (!cancelled) setExercises(cached);
+      if (!cancelled) setExercises(cached.map((item) => archivedIds.current.has(item.id) ? { ...item, active: false } : item));
     }
 
     async function refreshFromServer() {
       try {
         await cacheExerciseLibrary();
+        await Promise.all([...archivedIds.current].map((id) => db.exercises.update(id, { active: false })));
         await readCache();
       } catch {
         // A Library cached earlier remains browsable if the refresh fails.
@@ -91,6 +93,7 @@ export default function Library() {
     setArchivingId(exercise.id);
     try {
       await archiveExercise(exercise.id);
+      archivedIds.current.add(exercise.id);
       await db.exercises.update(exercise.id, { active: false });
       setExercises((current) => current.map((item) => item.id === exercise.id ? { ...item, active: false } : item));
     } catch {
@@ -275,7 +278,7 @@ function ExerciseCard({ exercise, sectionMuscles, onArchive, archiving }: { exer
       <p className="mt-2 text-xs text-ink-muted">Pressure {exercise.pressure} · impact {exercise.impact}</p>
       {exercise.block_reason && <p className="mt-1 text-xs text-ink-muted">{exercise.block_reason}</p>}
       {exercise.caution && <p className="mt-1 text-xs text-ink-muted">{exercise.caution}</p>}
-      <button type="button" onClick={onArchive} disabled={archiving} aria-label={`Archive ${exercise.name}`} className="mt-3 min-h-11 rounded-xl bg-surface-alt px-3 text-sm text-ink disabled:opacity-40">
+      <button type="button" onClick={onArchive} disabled={archiving} aria-label={`Archive ${exercise.name}`} className="mt-3 min-h-12 rounded-xl bg-surface-alt px-3 text-sm text-ink disabled:opacity-40">
         {archiving ? 'Archiving…' : 'Archive'}
       </button>
     </Card>
