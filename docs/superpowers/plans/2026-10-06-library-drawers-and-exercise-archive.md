@@ -36,6 +36,7 @@
 - `server/internal/today/today.go` and `today_test.go` — omit archived entries from approved swap choices.
 - `app/src/lib/types.ts` — optional `Exercise.active` for old local cache compatibility.
 - `app/src/lib/api.ts` — full-cache listing and archive request.
+- `app/src/lib/api.test.ts` — archive request method/path/success/error behavior.
 - `app/src/lib/exerciseCache.ts` and `exerciseCache.test.ts` — retain archived details in Dexie and filter them from search.
 - `app/src/routes/Library.tsx` and `Library.test.tsx` — disclosure drawers, confirmation, online action, pending/error/success states.
 - `docs/prd.md`, `docs/architecture.md`, `docs/implementation-plan.md`, `memory.md`, `CLAUDE.md` — canonical behavior and project checkpoint/index.
@@ -63,14 +64,14 @@
 - [ ] **Step 1: Write failing seed tests** named `TestArchiveExercise`, `TestArchiveUnknownExercise`, `TestListExcludesArchivedByDefault`, `TestListCanIncludeArchived`, `TestApplyPreservesArchivedState`, and `TestInsertOneStartsActive`. Assert archive changes only `active`, preserves `exercise_muscles` and references, default listing excludes inactive rows, explicit inclusion returns them, reseeding does not reactivate, and new records start active.
 - [ ] **Step 2: Run the focused seed tests and confirm they fail** with the missing active/archive behavior.
 
-Run: `go test ./internal/seed -run 'Test(Archive|ApplyPreservesArchivedState|List)' -count=1`
+Run: `go test ./internal/seed -run 'Test(Archive|ApplyPreservesArchivedState|List|InsertOneStartsActive)' -count=1`
 
 Expected: FAIL because the migration, active-aware API, and archive mutation do not exist yet.
 
 - [ ] **Step 3: Add migration and seed behavior.** Add `active INTEGER NOT NULL DEFAULT 1`; scan it into `Exercise`; omit `active` from the seed upsert's update clause so curated reseeds do not reactivate archived rows; implement `Archive` and active/archive-aware `List`.
 - [ ] **Step 4: Run focused seed tests and confirm they pass.**
 
-Run: `go test ./internal/seed -run 'Test(Archive|ApplyPreservesArchivedState|List)' -count=1`
+Run: `go test ./internal/seed -run 'Test(Archive|ApplyPreservesArchivedState|List|InsertOneStartsActive)' -count=1`
 
 Expected: PASS.
 
@@ -108,19 +109,25 @@ Expected: all commands succeed.
 - `getExerciseLibrary()` fetches blocked and archived rows for the complete cache; `cacheExerciseLibrary()` retains the active value and muscle metadata for archived rows.
 - `searchExercisesOffline(query, includeBlocked)` excludes `active === false`, while retaining current blocked filtering and search ordering.
 
-- [ ] **Step 1: Write failing client tests** for archived full-cache retention, inactive exclusion from offline search, and missing-active compatibility.
+- [ ] **Step 1: Write failing client tests** named `cacheExerciseLibraryRetainsArchivedDetails`, `offlineSearchExcludesArchivedExercises`, `offlineSearchTreatsMissingActiveAsActive`, `archiveExerciseSendsDeleteRequest`, and `archiveExerciseRejectsServerError`. Assert the cache retains inactive rows and their muscle weights, search ignores only explicit `active: false`, and archive sends DELETE to the exercise ID and rejects failed HTTP responses.
 - [ ] **Step 2: Run focused frontend tests and confirm they fail.**
 
-Run: `npm test -- src/lib/exerciseCache.test.ts`
+Run: `npm test -- src/lib/exerciseCache.test.ts src/lib/api.test.ts`
 
 Expected: FAIL because cache responses do not request/archive active state and search does not filter it.
 
 - [ ] **Step 3: Add the optional client field, archive API wrapper, and cache/search behavior.** Parse `active` when present; keep old cached objects valid; fetch the full archive-aware catalogue for cache retention.
 - [ ] **Step 4: Run focused frontend tests and confirm they pass.**
 
-Run: `npm test -- src/lib/exerciseCache.test.ts`
+Run: `npm test -- src/lib/exerciseCache.test.ts src/lib/api.test.ts`
 
 Expected: PASS.
+
+- [ ] **Step 5: Run the full frontend suite before committing this task.**
+
+Run: `npm test`
+
+Expected: all frontend tests pass.
 
 ### Task 3: Add Library disclosure groups and confirmed archive action
 
