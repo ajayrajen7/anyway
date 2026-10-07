@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Card, Pill } from '../components/ui';
-import { ApiError, generateExercise } from '../lib/api';
+import { ApiError, archiveExercise, generateExercise } from '../lib/api';
 import { cacheExercise, cacheExerciseLibrary } from '../lib/exerciseCache';
 import { db } from '../lib/db';
 import { groupExercisesBySection, LIBRARY_SECTIONS, type LibrarySectionId } from '../lib/libraryMuscleGroups';
@@ -14,6 +14,10 @@ export default function Library() {
   const [loading, setLoading] = useState(true);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [activeSection, setActiveSection] = useState<LibrarySectionId | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<LibrarySectionId>>(() => new Set());
+  const [archivingId, setArchivingId] = useState<number | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const archivedIds = useRef(new Set<number>());
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
   const [generation, setGeneration] = useState<GenerateState>({ status: 'idle' });
@@ -25,12 +29,13 @@ export default function Library() {
 
     async function readCache() {
       const cached = await db.exercises.toArray();
-      if (!cancelled) setExercises(cached);
+      if (!cancelled) setExercises(cached.map((item) => archivedIds.current.has(item.id) ? { ...item, active: false } : item));
     }
 
     async function refreshFromServer() {
       try {
         await cacheExerciseLibrary();
+        await Promise.all([...archivedIds.current].map((id) => db.exercises.update(id, { active: false })));
         await readCache();
       } catch {
         // A Library cached earlier remains browsable if the refresh fails.
@@ -66,7 +71,37 @@ export default function Library() {
     };
   }, []);
 
-  const groups = groupExercisesBySection(exercises);
+  const groups = groupExercisesBySection(exercises.filter((exercise) => exercise.active !== false));
+
+  function toggleSection(id: LibrarySectionId) {
+    setExpandedSections((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function archiveFromLibrary(exercise: Exercise) {
+    setArchiveError(null);
+    if (!online || !navigator.onLine) {
+      setArchiveError('A connection is required to archive an exercise.');
+      return;
+    }
+    if (archivingId !== null) return;
+    if (!window.confirm(`Archive ${exercise.name} from the exercise catalogue and future search choices? This leaves existing plans and history intact.`)) return;
+    setArchivingId(exercise.id);
+    try {
+      await archiveExercise(exercise.id);
+      archivedIds.current.add(exercise.id);
+      await db.exercises.update(exercise.id, { active: false });
+      setExercises((current) => current.map((item) => item.id === exercise.id ? { ...item, active: false } : item));
+    } catch {
+      setArchiveError("Couldn't archive that exercise. Please try again with a connection.");
+    } finally {
+      setArchivingId(null);
+    }
+  }
 
   async function createExercise(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,6 +160,7 @@ export default function Library() {
       </header>
 
       {created && <GeneratedNotice exercise={created} />}
+      {archiveError && <p role="alert" className="text-sm text-red-400">{archiveError}</p>}
 
       {exercises.length === 0 && (
         <Card>
@@ -136,19 +172,27 @@ export default function Library() {
 
       <div className="space-y-4">
         {groups.map((group) => (
-          <section key={group.id} aria-labelledby={`library-${group.id}`} className="space-y-2">
+          <section key={group.id} aria-label={group.label} className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <div>
-                <h2 id={`library-${group.id}`} className="text-base font-semibold text-ink">
-                  {group.label}
-                </h2>
-                <p className="text-xs text-ink-muted">{group.exercises.length} exercises</p>
-              </div>
+              <h2 id={`library-${group.id}`} className="min-w-0 flex-1 text-base font-semibold text-ink">
+                <button
+                  type="button"
+                  aria-label={`${group.label}, ${group.exercises.length} exercises`}
+                  aria-expanded={expandedSections.has(group.id)}
+                  aria-controls={`library-${group.id}-content`}
+                  onClick={() => toggleSection(group.id)}
+                  className="flex min-h-12 w-full items-center justify-between gap-2 text-left"
+                >
+                  <span><span className="block">{group.label}</span><span className="block text-xs font-normal text-ink-muted">{group.exercises.length} exercises</span></span>
+                  <span aria-hidden="true" className={expandedSections.has(group.id) ? 'rotate-180' : ''}>▾</span>
+                </button>
+              </h2>
               <button
                 type="button"
                 aria-label={`Add exercise to ${group.label}`}
                 onClick={() => {
                   setActiveSection(activeSection === group.id ? null : group.id);
+                  setExpandedSections((current) => new Set(current).add(group.id));
                   setGeneration({ status: 'idle' });
                   setCreated(null);
                 }}
@@ -158,7 +202,8 @@ export default function Library() {
               </button>
             </div>
 
-            {activeSection === group.id && (
+            <div id={`library-${group.id}-content`} hidden={!expandedSections.has(group.id)}>
+            {expandedSections.has(group.id) && activeSection === group.id && (
               <Card>
                 <form onSubmit={createExercise} className="space-y-3">
                   <label className="block text-sm text-ink">
@@ -196,15 +241,16 @@ export default function Library() {
               </Card>
             )}
 
-            {group.exercises.length > 0 ? (
+            {expandedSections.has(group.id) && (group.exercises.length > 0 ? (
               <div className="space-y-2">
                 {group.exercises.map((exercise) => (
-                  <ExerciseCard key={exercise.id} exercise={exercise} sectionMuscles={group.muscles} />
+                  <ExerciseCard key={exercise.id} exercise={exercise} sectionMuscles={group.muscles} onArchive={() => void archiveFromLibrary(exercise)} archiving={archivingId === exercise.id} />
                 ))}
               </div>
             ) : (
               <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-muted">No exercises in this group yet.</p>
-            )}
+            ))}
+            </div>
           </section>
         ))}
       </div>
@@ -212,7 +258,7 @@ export default function Library() {
   );
 }
 
-function ExerciseCard({ exercise, sectionMuscles }: { exercise: Exercise; sectionMuscles: readonly MuscleGroup[] }) {
+function ExerciseCard({ exercise, sectionMuscles, onArchive, archiving }: { exercise: Exercise; sectionMuscles: readonly MuscleGroup[]; onArchive: () => void; archiving: boolean }) {
   const impacts = sectionMuscles
     .map((muscle) => [muscle, exercise.muscles[muscle]] as const)
     .filter((entry): entry is readonly [MuscleGroup, number] => (entry[1] ?? 0) > 0);
@@ -232,6 +278,9 @@ function ExerciseCard({ exercise, sectionMuscles }: { exercise: Exercise; sectio
       <p className="mt-2 text-xs text-ink-muted">Pressure {exercise.pressure} · impact {exercise.impact}</p>
       {exercise.block_reason && <p className="mt-1 text-xs text-ink-muted">{exercise.block_reason}</p>}
       {exercise.caution && <p className="mt-1 text-xs text-ink-muted">{exercise.caution}</p>}
+      <button type="button" onClick={onArchive} disabled={archiving} aria-label={`Archive ${exercise.name}`} className="mt-3 min-h-12 rounded-xl bg-surface-alt px-3 text-sm text-ink disabled:opacity-40">
+        {archiving ? 'Archiving…' : 'Archive'}
+      </button>
     </Card>
   );
 }

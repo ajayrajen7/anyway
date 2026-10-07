@@ -8,14 +8,15 @@ import { db } from '../lib/db';
 import Library from './Library';
 import type { Exercise } from '../lib/types';
 
-const { generateExerciseMock, refreshLibraryMock } = vi.hoisted(() => ({
+const { generateExerciseMock, archiveExerciseMock, refreshLibraryMock } = vi.hoisted(() => ({
   generateExerciseMock: vi.fn(),
+  archiveExerciseMock: vi.fn(),
   refreshLibraryMock: vi.fn(),
 }));
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
-  return { ...actual, generateExercise: generateExerciseMock };
+  return { ...actual, generateExercise: generateExerciseMock, archiveExercise: archiveExerciseMock };
 });
 
 vi.mock('../lib/exerciseCache', async () => {
@@ -60,6 +61,7 @@ function renderLibrary() {
 afterEach(async () => {
   cleanup();
   generateExerciseMock.mockReset();
+  archiveExerciseMock.mockReset();
   refreshLibraryMock.mockReset();
   setOnline(true);
   await db.exercises.clear();
@@ -76,6 +78,8 @@ describe('Library', () => {
 
     const back = await screen.findByRole('region', { name: 'Back' });
     expect(refreshLibraryMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(within(back).getByRole('button', { name: /Back, 1 exercises/i })).toBeInTheDocument());
+    await userEvent.click(within(back).getByRole('button', { name: /Back, 1 exercises/i }));
     expect(await within(back).findByRole('heading', { name: 'Machine row' })).toBeInTheDocument();
   });
 
@@ -100,6 +104,9 @@ describe('Library', () => {
     const chest = screen.getByRole('region', { name: 'Chest' });
     const shoulders = screen.getByRole('region', { name: 'Shoulders & Arms' });
     const legs = screen.getByRole('region', { name: 'Legs' });
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    await userEvent.click(within(shoulders).getByRole('button', { name: /Shoulders & Arms, 1 exercises/i }));
+    await userEvent.click(within(legs).getByRole('button', { name: /Legs, 1 exercises/i }));
     expect(within(chest).getByRole('heading', { name: 'Chest press' })).toBeInTheDocument();
     expect(within(chest).getByText('Chest 1.0')).toBeInTheDocument();
     expect(within(shoulders).getByRole('heading', { name: 'Chest press' })).toBeInTheDocument();
@@ -137,11 +144,14 @@ describe('Library', () => {
     );
     expect(generateExerciseMock.mock.calls[0][1]).toContain('Neutral grip');
     expect(await db.exercises.get(15)).toMatchObject({ name: 'Lat pulldown', muscles: { lats: 1.0, biceps: 0.5 } });
-    expect(screen.getAllByRole('heading', { name: 'Lat pulldown' })).toHaveLength(2);
+    expect(screen.getAllByRole('heading', { name: 'Lat pulldown' })).toHaveLength(1);
     expect(screen.getByText('AI-estimated — review before use')).toBeInTheDocument();
-    expect(screen.getAllByText('Keep the ribs relaxed.')).toHaveLength(3);
+    expect(screen.getAllByText('Keep the ribs relaxed.')).toHaveLength(2);
     const back = screen.getByRole('region', { name: 'Back' });
     const shoulders = screen.getByRole('region', { name: 'Shoulders & Arms' });
+    await userEvent.click(within(shoulders).getByRole('button', { name: /Shoulders & Arms, 1 exercises/i }));
+    expect(screen.getAllByRole('heading', { name: 'Lat pulldown' })).toHaveLength(2);
+    expect(screen.getAllByText('Keep the ribs relaxed.')).toHaveLength(3);
     expect(within(back).getByText('Lats 1.0')).toBeInTheDocument();
     expect(within(shoulders).getByText('Biceps 0.5')).toBeInTheDocument();
     const result = screen.getByRole('status');
@@ -189,6 +199,163 @@ describe('Library', () => {
     const core = screen.getByRole('region', { name: 'Core' });
     expect(within(core).getByText('Blocked')).toBeInTheDocument();
     expect(await db.exercises.get(25)).toMatchObject({ blocked: true, block_reason: 'High intra-abdominal pressure' });
+  });
+
+  it('startsWithEveryMuscleGroupCollapsed', async () => {
+    setOnline(false);
+    await db.exercises.put(exercise());
+    renderLibrary();
+    await screen.findByRole('heading', { name: 'Exercise library' });
+    for (const label of ['Chest', 'Back', 'Shoulders & Arms', 'Legs', 'Core']) {
+      const group = screen.getByRole('region', { name: label });
+      const disclosure = within(group).getByRole('button', { name: new RegExp(`^${label},`) });
+      expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      expect(disclosure).toHaveAttribute('aria-controls');
+      expect(within(group).queryByRole('heading', { name: 'Sample exercise' })).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole('region', { name: 'Chest' })).toHaveTextContent('1 exercises');
+  });
+
+  it('expandsOnlyTheSelectedGroup', async () => {
+    setOnline(false);
+    await db.exercises.put(exercise({ muscles: { chest: 1, delts_front: 0.5 } }));
+    renderLibrary();
+    const chest = await screen.findByRole('region', { name: 'Chest' });
+    const shoulders = screen.getByRole('region', { name: 'Shoulders & Arms' });
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    expect(within(chest).getByRole('heading', { name: 'Sample exercise' })).toBeInTheDocument();
+    expect(within(shoulders).queryByRole('heading', { name: 'Sample exercise' })).not.toBeInTheDocument();
+    expect(within(shoulders).getByRole('button', { name: /Shoulders & Arms, 1 exercises/i })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('addActionIsVisibleAndIndependentOfDisclosure', async () => {
+    setOnline(false);
+    renderLibrary();
+    const back = await screen.findByRole('region', { name: 'Back' });
+    const disclosure = within(back).getByRole('button', { name: /Back, 0 exercises/i });
+    expect(within(back).getByRole('button', { name: 'Add exercise to Back' })).toBeVisible();
+    await userEvent.click(within(back).getByRole('button', { name: 'Add exercise to Back' }));
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(within(back).getByRole('textbox', { name: 'Exercise name' })).toBeInTheDocument();
+    await userEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(within(back).queryByRole('textbox', { name: 'Exercise name' })).not.toBeInTheDocument();
+  });
+
+  it('cancelledArchiveKeepsExercise', async () => {
+    setOnline(false);
+    await db.exercises.put(exercise());
+    setOnline(true);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderLibrary();
+    const chest = await screen.findByRole('region', { name: 'Chest' });
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    await userEvent.click(within(chest).getByRole('button', { name: 'Archive Sample exercise' }));
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringMatching(/existing plans and history.*intact/i));
+    expect(archiveExerciseMock).not.toHaveBeenCalled();
+    expect(within(chest).getByRole('heading', { name: 'Sample exercise' })).toBeInTheDocument();
+    expect((await db.exercises.get(1))?.active).not.toBe(false);
+    confirmSpy.mockRestore();
+  });
+
+  it('archivesCrossListedExerciseFromEveryGroup', async () => {
+    setOnline(false);
+    await db.exercises.put(exercise({ muscles: { chest: 1, delts_front: 0.5 } }));
+    setOnline(true);
+    refreshLibraryMock.mockResolvedValue(undefined);
+    archiveExerciseMock.mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderLibrary();
+    const chest = await screen.findByRole('region', { name: 'Chest' });
+    const shoulders = screen.getByRole('region', { name: 'Shoulders & Arms' });
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    await userEvent.click(within(shoulders).getByRole('button', { name: /Shoulders & Arms, 1 exercises/i }));
+    await userEvent.click(within(chest).getByRole('button', { name: 'Archive Sample exercise' }));
+    await waitFor(() => expect((within(chest).queryByRole('heading', { name: 'Sample exercise' }))).not.toBeInTheDocument());
+    expect(within(shoulders).queryByRole('heading', { name: 'Sample exercise' })).not.toBeInTheDocument();
+    expect(chest).toHaveTextContent('0 exercises');
+    expect(shoulders).toHaveTextContent('0 exercises');
+    expect(await db.exercises.get(1)).toMatchObject({ active: false });
+    confirmSpy.mockRestore();
+  });
+
+  it('keepsExerciseVisibleUntilServerConfirmsArchive', async () => {
+    setOnline(false);
+    await db.exercises.put(exercise());
+    setOnline(true);
+    refreshLibraryMock.mockResolvedValue(undefined);
+    let resolveArchive!: () => void;
+    archiveExerciseMock.mockImplementation(() => new Promise<void>((resolve) => { resolveArchive = resolve; }));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderLibrary();
+    const chest = await screen.findByRole('region', { name: 'Chest' });
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    await userEvent.click(within(chest).getByRole('button', { name: 'Archive Sample exercise' }));
+    expect(within(chest).getByRole('heading', { name: 'Sample exercise' })).toBeInTheDocument();
+    expect(within(chest).getByRole('button', { name: 'Archive Sample exercise' })).toBeDisabled();
+    expect((await db.exercises.get(1))?.active).not.toBe(false);
+    resolveArchive();
+    await waitFor(() => expect(within(chest).queryByRole('heading', { name: 'Sample exercise' })).not.toBeInTheDocument());
+    confirmSpy.mockRestore();
+  });
+
+  it('staleRefreshCannotRestoreArchivedExercise', async () => {
+    setOnline(false);
+    const original = exercise({ active: true, muscles: { chest: 1, delts_front: 0.5 } });
+    await db.exercises.put(original);
+    setOnline(true);
+    let resolveRefresh!: () => void;
+    refreshLibraryMock.mockImplementation(async () => {
+      await new Promise<void>((resolve) => { resolveRefresh = resolve; });
+      await db.exercises.put(original);
+    });
+    archiveExerciseMock.mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderLibrary();
+    const chest = await screen.findByRole('region', { name: 'Chest' });
+    const shoulders = screen.getByRole('region', { name: 'Shoulders & Arms' });
+    await waitFor(() => expect(refreshLibraryMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    await userEvent.click(within(shoulders).getByRole('button', { name: /Shoulders & Arms, 1 exercises/i }));
+    await userEvent.click(within(chest).getByRole('button', { name: 'Archive Sample exercise' }));
+    await waitFor(async () => expect((await db.exercises.get(1))?.active).toBe(false));
+    resolveRefresh();
+    await refreshLibraryMock.mock.results[0].value;
+    await waitFor(async () => {
+      expect((await db.exercises.get(1))?.active).toBe(false);
+      expect(within(chest).queryByRole('heading', { name: 'Sample exercise' })).not.toBeInTheDocument();
+      expect(within(shoulders).queryByRole('heading', { name: 'Sample exercise' })).not.toBeInTheDocument();
+    });
+    confirmSpy.mockRestore();
+  });
+
+  it('archiveRequiresConnection', async () => {
+    setOnline(false);
+    await db.exercises.put(exercise());
+    renderLibrary();
+    const chest = await screen.findByRole('region', { name: 'Chest' });
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    await userEvent.click(within(chest).getByRole('button', { name: 'Archive Sample exercise' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/connection.*archive/i);
+    expect(archiveExerciseMock).not.toHaveBeenCalled();
+    expect(within(chest).getByRole('heading', { name: 'Sample exercise' })).toBeInTheDocument();
+  });
+
+  it('archiveFailureKeepsExerciseVisible', async () => {
+    setOnline(false);
+    await db.exercises.put(exercise());
+    setOnline(true);
+    refreshLibraryMock.mockResolvedValue(undefined);
+    archiveExerciseMock.mockRejectedValue(new ApiError(500, 'failed'));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderLibrary();
+    const chest = await screen.findByRole('region', { name: 'Chest' });
+    await userEvent.click(within(chest).getByRole('button', { name: /Chest, 1 exercises/i }));
+    await userEvent.click(within(chest).getByRole('button', { name: 'Archive Sample exercise' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't archive/i);
+    expect(within(chest).getByRole('heading', { name: 'Sample exercise' })).toBeInTheDocument();
+    expect((await db.exercises.get(1))?.active).not.toBe(false);
+    confirmSpy.mockRestore();
   });
 
   it('explains when the server has no exercise generator configured', async () => {

@@ -98,6 +98,24 @@ describe('Swap flow (from the single-exercise screen)', () => {
     expect(stored[0]).toMatchObject({ exercise_id: 20, provenance: 'swap_in_list', slot_id: 100 });
   });
 
+  it('doesNotOfferAnArchivedApprovedSwap', async () => {
+    const user = userEvent.setup();
+    await seedCache([makeSlot({
+      swaps: [
+        { id: 20, slug: 'leg-press-sl', name: 'Single-leg leg press', unilateral: true, increment_kg: 5 },
+        { id: 21, slug: 'goblet-squat', name: 'Goblet squat', unilateral: false, increment_kg: 2.5 },
+      ],
+    })]);
+    await db.exercises.put(fullExercise({ id: 20, slug: 'leg-press-sl', name: 'Single-leg leg press', active: false }));
+    await db.exercises.put(fullExercise({ id: 21, slug: 'goblet-squat', name: 'Goblet squat', active: true }));
+    renderApp('/session/42/exercise/slot-100');
+
+    await user.click(await screen.findByRole('link', { name: 'Swap' }));
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Goblet squat' })).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: 'Single-leg leg press' })).not.toBeInTheDocument();
+  });
+
   it('picking a tier-2 search result uses provenance=swap_off_list', async () => {
     const user = userEvent.setup();
     await seedCache([makeSlot()]);

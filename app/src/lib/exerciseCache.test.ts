@@ -38,9 +38,40 @@ describe('cacheExerciseLibrary', () => {
     await cacheExerciseLibrary();
     expect(await db.exercises.count()).toBe(2);
   });
+
+  it('cacheExerciseLibraryRetainsArchivedDetails', async () => {
+    getExerciseLibraryMock.mockResolvedValue([ex({ id: 3, active: false, muscles: { quads: 0.5, glutes: 0.75 } })]);
+    await cacheExerciseLibrary();
+    expect(await db.exercises.get(3)).toMatchObject({ active: false, muscles: { quads: 0.5, glutes: 0.75 } });
+  });
+
+  it('cacheRefreshDoesNotReactivateAnExerciseArchivedWhileTheRequestWasInFlight', async () => {
+    let resolveRefresh!: (exercises: Exercise[]) => void;
+    getExerciseLibraryMock.mockImplementation(() => new Promise<Exercise[]>((resolve) => { resolveRefresh = resolve; }));
+    const refresh = cacheExerciseLibrary();
+    await db.exercises.put(ex({ active: false }));
+
+    resolveRefresh([ex({ active: true })]);
+    await refresh;
+
+    expect((await db.exercises.get(1))?.active).toBe(false);
+  });
 });
 
 describe('searchExercisesOffline', () => {
+  it('offlineSearchExcludesArchivedExercises', async () => {
+    await db.exercises.bulkPut([
+      ex({ id: 1, name: 'Active curl', active: true }),
+      ex({ id: 2, name: 'Archived curl', active: false }),
+    ]);
+    expect((await searchExercisesOffline('curl', true)).map((e) => e.name)).toEqual(['Active curl']);
+  });
+
+  it('offlineSearchTreatsMissingActiveAsActive', async () => {
+    await db.exercises.put(ex({ id: 4, name: 'Legacy curl' }));
+    expect((await searchExercisesOffline('curl', false)).map((e) => e.name)).toEqual(['Legacy curl']);
+  });
+
   it('excludes blocked exercises by default', async () => {
     await db.exercises.bulkPut([ex({ id: 1, name: 'Goblet squat' }), ex({ id: 2, name: 'Running', blocked: true, block_reason: 'Impact' })]);
     const results = await searchExercisesOffline('', false);

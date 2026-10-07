@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import SheetShell from '../components/SheetShell';
-import { searchExercisesOffline } from '../lib/exerciseCache';
+import { getArchivedExerciseIds, searchExercisesOffline } from '../lib/exerciseCache';
 import { applySwap } from '../lib/overlay';
 import type { RunnerOutletContext } from '../lib/session';
 import type { Exercise, ExerciseRef } from '../lib/types';
@@ -23,6 +23,17 @@ export default function SwapSheet() {
   const originalSlot = data.slots.find((s) => s.id === Number(slotId));
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Exercise[]>([]);
+  const [archivedIds, setArchivedIds] = useState<Set<number> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getArchivedExerciseIds().then((ids) => {
+      if (!cancelled) setArchivedIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,7 +62,7 @@ export default function SwapSheet() {
       <h2 className="text-sm text-ink-muted">Instead of {(currentSlot ?? originalSlot).exercise.name.toUpperCase()}:</h2>
 
       <ul className="mt-3 flex flex-col gap-1">
-        {originalSlot.swaps.map((option) => (
+        {(archivedIds ? originalSlot.swaps.filter((option) => !archivedIds.has(option.id)) : []).map((option) => (
           <li key={option.id}>
             <button
               type="button"

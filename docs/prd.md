@@ -237,6 +237,20 @@ An exercise appears in every section represented by one or more of its
 positive-weight canonical tags. Show its detailed muscle labels and existing
 weights under its name. Do not add or display a combined section score.
 Blocked exercises remain visible with their reason and blocked state.
+All five sections start collapsed. Each section's disclosure shows the count
+of active catalogue exercises and opens only that section. Its Add action
+remains visible beside the disclosure; opening Add reveals that section.
+
+Each exercise card offers Archive. Confirm that archiving removes the entry
+from the Library and future search choices, including approved swaps held in
+older session snapshots, while existing plans and history remain intact.
+Archiving requires a connection. Cancelled or failed requests
+leave the exercise visible and a failure shows an inline error. A successful
+archive removes the exercise from every matching section, including when it
+was cross-listed, and it stays absent after refresh. A delayed cache refresh
+cannot reactivate it. Archived records and
+their muscle weights remain stored for programme/session references and
+Coverage. Old cached records without an active flag remain visible.
 
 Each section has an **Add exercise** action. The person enters a name and may
 include a short description or equipment note. This calls the existing
